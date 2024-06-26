@@ -2,100 +2,129 @@
 
 from __future__ import annotations
 
+import logging
+import json
 import socket
+import xmltodict
+
 from typing import Any
 
 import aiohttp
 import async_timeout
 
+_LOGGER = logging.getLogger(__name__)
 
-class IntegrationBlueprintApiClientError(Exception):
+
+class ZeptrionAirApiClientError(Exception):
     """Exception to indicate a general API error."""
 
 
-class IntegrationBlueprintApiClientCommunicationError(
-    IntegrationBlueprintApiClientError,
+class ZeptrionAirApiClientCommunicationError(
+    ZeptrionAirApiClientError,
 ):
     """Exception to indicate a communication error."""
 
 
-class IntegrationBlueprintApiClientAuthenticationError(
-    IntegrationBlueprintApiClientError,
-):
-    """Exception to indicate an authentication error."""
-
-
 def _verify_response_or_raise(response: aiohttp.ClientResponse) -> None:
     """Verify that the response is valid."""
-    if response.status in (401, 403):
-        msg = "Invalid credentials"
-        raise IntegrationBlueprintApiClientAuthenticationError(
-            msg,
-        )
     response.raise_for_status()
 
 
-class IntegrationBlueprintApiClient:
+class ZeptrionAirApiClient:
     """Sample API Client."""
 
     def __init__(
         self,
-        username: str,
-        password: str,
+        hostname: str,
         session: aiohttp.ClientSession,
     ) -> None:
         """Sample API Client."""
-        self._username = username
-        self._password = password
+        self._hostname = hostname
+        self._baseurl = 'http://' + hostname
         self._session = session
 
-    async def async_get_data(self) -> Any:
-        """Get data from the API."""
-        return await self._api_wrapper(
+    async def async_get_device_identification(self) -> Any:
+        """Get the device identification from the API."""
+        return await self._api_xml_wrapper(
             method="get",
-            url="https://jsonplaceholder.typicode.com/posts/1",
+            path="/zrap/id",
         )
 
-    async def async_set_title(self, value: str) -> Any:
-        """Get data from the API."""
-        return await self._api_wrapper(
-            method="patch",
-            url="https://jsonplaceholder.typicode.com/posts/1",
-            data={"title": value},
-            headers={"Content-type": "application/json; charset=UTF-8"},
-        )
-
-    async def _api_wrapper(
+    async def _api_json_wrapper(
         self,
         method: str,
-        url: str,
+        path: str,
         data: dict | None = None,
         headers: dict | None = None,
-    ) -> Any:
+    ) -> dict:
         """Get information from the API."""
         try:
+            # _LOGGER.info("[API] --> %s %s", method, self._baseurl + path)
             async with async_timeout.timeout(10):
                 response = await self._session.request(
                     method=method,
-                    url=url,
+                    url=self._baseurl + path,
                     headers=headers,
                     json=data,
                 )
                 _verify_response_or_raise(response)
-                return await response.json()
+
+                data = await response.json()
+                # _LOGGER.info("[API] <-- %s %s", response.status, data)
+                return data
 
         except TimeoutError as exception:
             msg = f"Timeout error fetching information - {exception}"
-            raise IntegrationBlueprintApiClientCommunicationError(
+            raise ZeptrionAirApiClientCommunicationError(
                 msg,
             ) from exception
         except (aiohttp.ClientError, socket.gaierror) as exception:
             msg = f"Error fetching information - {exception}"
-            raise IntegrationBlueprintApiClientCommunicationError(
+            raise ZeptrionAirApiClientCommunicationError(
                 msg,
             ) from exception
         except Exception as exception:  # pylint: disable=broad-except
             msg = f"Something really wrong happened! - {exception}"
-            raise IntegrationBlueprintApiClientError(
+            raise ZeptrionAirApiClientError(
                 msg,
             ) from exception
+        
+    async def _api_xml_wrapper(
+        self,
+        method: str,
+        path: str,
+        data: dict | None = None,
+        headers: dict | None = None,
+    ) -> dict:
+        """Get information from the API."""
+        try:
+            # _LOGGER.info("[API] --> %s %s", method, self._baseurl + path)
+            async with async_timeout.timeout(10):
+                response = await self._session.request(
+                    method=method,
+                    url=self._baseurl + path,
+                    headers=headers,
+                    data=data,
+                )
+                _verify_response_or_raise(response)
+
+                data = await response.text()
+                # _LOGGER.info("[API] <-- %s %s", response.status, data)
+                return xmltodict.parse(data)
+
+        except TimeoutError as exception:
+            msg = f"Timeout error fetching information - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(
+                msg,
+            ) from exception
+        except (aiohttp.ClientError, socket.gaierror) as exception:
+            msg = f"Error fetching information - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(
+                msg,
+            ) from exception
+        except Exception as exception:  # pylint: disable=broad-except
+            msg = f"Something really wrong happened! - {exception}"
+            raise ZeptrionAirApiClientError(
+                msg,
+            ) from exception
+

@@ -17,7 +17,7 @@ _Integration to integrate with [zeptrion_air][zeptrion_air]._
 Platform | Description
 -- | --
 `binary_sensor` | Show something `True` or `False`.
-`sensor` | Show info from blueprint API.
+`sensor` | Show info from Zeptrion Air API.
 `switch` | Switch something `True` or `False`.
 
 ## Installation
@@ -40,17 +40,11 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ***
 
-[zeptrion_air]: https://github.com/ludeeus/integration_blueprint
-[buymecoffee]: https://www.buymeacoffee.com/ludeeus
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
-[commits-shield]: https://img.shields.io/github/commit-activity/y/ludeeus/integration_blueprint.svg?style=for-the-badge
-[commits]: https://github.com/ludeeus/integration_blueprint/commits/main
-[discord]: https://discord.gg/Qa5fW2R
-[discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
-[exampleimg]: example.png
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
+[zeptrion_air]: https://github.com/heldchen/ha-zeptrion-air
+[commits-shield]: https://img.shields.io/github/commit-activity/y/heldchen/ha-zeptrion-air.svg?style=for-the-badge
+[commits]: https://github.com/heldchen/ha-zeptrion-air/commits/main
 [forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/ludeeus/integration_blueprint.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-Joakim%20Sørensen%20%40ludeeus-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/ludeeus/integration_blueprint.svg?style=for-the-badge
-[releases]: https://github.com/ludeeus/integration_blueprint/releases
+[license-shield]: https://img.shields.io/github/license/heldchen/ha-zeptrion-air.svg?style=for-the-badge
+
+[releases-shield]: https://img.shields.io/github/release/heldchen/ha-zeptrion-air.svg?style=for-the-badge
+[releases]: https://github.com/heldchen/ha-zeptrion-air/releases

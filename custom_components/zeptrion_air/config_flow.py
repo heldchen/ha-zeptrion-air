@@ -1,81 +1,103 @@
-"""Adds config flow for Blueprint."""
+"""Adds config flow for Zeptrion Air."""
 
 from __future__ import annotations
 
-import voluptuous as vol
+import zeroconf
+
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.components import onboarding
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import (
-    IntegrationBlueprintApiClient,
-    IntegrationBlueprintApiClientAuthenticationError,
-    IntegrationBlueprintApiClientCommunicationError,
-    IntegrationBlueprintApiClientError,
+    ZeptrionAirApiClient,
+    ZeptrionAirApiClientCommunicationError,
+    ZeptrionAirApiClientError,
 )
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, CONF_NAME, CONF_HOSTNAME, CONF_IP_ADDRESS
 
 
-class BlueprintFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow for Blueprint."""
+class ZeptrionAirFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+    """Config flow for Zeptrion Air."""
 
     VERSION = 1
+    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    async def async_step_user(
-        self,
-        user_input: dict | None = None,
-    ) -> data_entry_flow.FlowResult:
-        """Handle a flow initialized by the user."""
-        _errors = {}
+    discovery_info: dict
+
+    def __init__(self):
+        """Initialize the Zeptrion Air config flow."""
+        self.discovery_info = None
+
+    async def async_step_zeroconf(self, discovery_info: zeroconf.ZeroconfServiceInfo):
+        """Prepare configuration for a discovered Zeptrion Air device."""
+        # LOGGER.info("Zeroconf discovery_info: %s", discovery_info)
+
+        self.discovery_info = {
+            CONF_NAME: discovery_info.name,
+            CONF_HOSTNAME: discovery_info.hostname[:-1],
+            CONF_IP_ADDRESS: str(discovery_info.ip_address),
+            'port': discovery_info.port,
+            'properties': discovery_info.properties
+        }
+
+        await self.async_set_unique_id(unique_id=self.discovery_info.get(CONF_NAME))
+
+        self._abort_if_unique_id_configured(
+            updates={
+                CONF_HOSTNAME: self.discovery_info.get(CONF_HOSTNAME),
+                CONF_IP_ADDRESS: self.discovery_info.get(CONF_IP_ADDRESS),
+            }
+        )
+
+        self.context.update(
+            {
+                "title_placeholders": {
+                    CONF_NAME: self.discovery_info.get(CONF_HOSTNAME).replace('.local', ''),
+                },
+            }
+        )
+
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Confirm a discovery."""
+
         if user_input is not None:
             try:
-                await self._test_credentials(
-                    username=user_input[CONF_USERNAME],
-                    password=user_input[CONF_PASSWORD],
+                api = ZeptrionAirApiClient(
+                    hostname=self.discovery_info.get(CONF_HOSTNAME),
+                    session=async_create_clientsession(self.hass),
                 )
-            except IntegrationBlueprintApiClientAuthenticationError as exception:
-                LOGGER.warning(exception)
-                _errors["base"] = "auth"
-            except IntegrationBlueprintApiClientCommunicationError as exception:
+
+                device_info = await api.async_get_device_identification()
+                LOGGER.info("ZAPI: get_device_identification: %s", device_info)
+
+            except ZeptrionAirApiClientCommunicationError as exception:
                 LOGGER.error(exception)
-                _errors["base"] = "connection"
-            except IntegrationBlueprintApiClientError as exception:
+                return self.async_abort(reason="connection")
+            except ZeptrionAirApiClientError as exception:
                 LOGGER.exception(exception)
-                _errors["base"] = "unknown"
-            else:
-                return self.async_create_entry(
-                    title=user_input[CONF_USERNAME],
-                    data=user_input,
-                )
+                return self.async_abort(reason="unknown")
+
+            return self.async_create_entry(
+                title=self.discovery_info.get(CONF_HOSTNAME).replace('.local', ''),
+                description='Zeptrion Air Hub',
+                data={
+                    CONF_HOSTNAME: self.discovery_info.get(CONF_HOSTNAME),
+                    CONF_IP_ADDRESS: self.discovery_info.get(CONF_IP_ADDRESS),
+                },
+            )
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_USERNAME,
-                        default=(user_input or {}).get(CONF_USERNAME, vol.UNDEFINED),
-                    ): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.TEXT,
-                        ),
-                    ),
-                    vol.Required(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD,
-                        ),
-                    ),
-                },
-            ),
-            errors=_errors,
+            step_id="confirm",
+            description_placeholders={
+                CONF_NAME: self.discovery_info.get(CONF_NAME),
+                CONF_HOSTNAME: self.discovery_info.get(CONF_HOSTNAME),
+                CONF_IP_ADDRESS: self.discovery_info.get(CONF_IP_ADDRESS),
+            },
         )
-
-    async def _test_credentials(self, username: str, password: str) -> None:
-        """Validate credentials."""
-        client = IntegrationBlueprintApiClient(
-            username=username,
-            password=password,
-            session=async_create_clientsession(self.hass),
-        )
-        await client.async_get_data()
+    

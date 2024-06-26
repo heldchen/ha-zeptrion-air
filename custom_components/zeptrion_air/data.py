@@ -9,17 +9,17 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.loader import Integration
 
-    from .api import IntegrationBlueprintApiClient
-    from .coordinator import BlueprintDataUpdateCoordinator
+    from .api import ZeptrionAirApiClient
+    from .coordinator import ZeptrionAirDataUpdateCoordinator
 
 
-type IntegrationBlueprintConfigEntry = ConfigEntry[IntegrationBlueprintData]
+type ZeptrionAirConfigEntry = ConfigEntry[ZeptrionAirData]
 
 
 @dataclass
-class IntegrationBlueprintData:
-    """Data for the Blueprint integration."""
+class ZeptrionAirData:
+    """Data for the ZeptrionAir integration."""
 
-    client: IntegrationBlueprintApiClient
-    coordinator: BlueprintDataUpdateCoordinator
+    client: ZeptrionAirApiClient
+    coordinator: ZeptrionAirDataUpdateCoordinator
     integration: Integration
