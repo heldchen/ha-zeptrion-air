@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for integration_blueprint."""
+"""DataUpdateCoordinator for zeptrion_air."""
 
 from __future__ import annotations
 

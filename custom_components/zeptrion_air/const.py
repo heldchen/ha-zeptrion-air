@@ -1,8 +1,8 @@
-"""Constants for integration_blueprint."""
+"""Constants for zeptrion_air."""
 
 from logging import Logger, getLogger
 
 LOGGER: Logger = getLogger(__package__)
 
-DOMAIN = "integration_blueprint"
+DOMAIN = "zeptrion_air"
 ATTRIBUTION = "Data provided by http://jsonplaceholder.typicode.com/"

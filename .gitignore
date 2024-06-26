@@ -1,3 +1,6 @@
+# python venv
+.venv/
+
 # artifacts
 __pycache__
 .pytest*
