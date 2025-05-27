@@ -23,7 +23,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
-    """Set up Zeptrion Air light entities from a config entry - MINIMAL.".""
+    """Set up Zeptrion Air light entities from a config entry - MINIMAL."""
     _LOGGER.info("Minimal light.py: async_setup_entry called. Not adding entities.")
     # For now, do not try to get platform_data or add entities.
     # platform_data = hass.data.get(DOMAIN, {}).get(entry.entry_id) 
@@ -42,7 +42,7 @@ class ZeptrionAirMinimalLightSwitch(LightEntity):
     _attr_should_poll = False
 
     def __init__(self, channel_id: int, hub_serial: str) -> None:
-        """Initialize the Zeptrion Air minimal light switch.".""
+        """Initialize the Zeptrion Air minimal light switch."""
         self._channel_id = channel_id
         self._attr_name = f"Minimal Zeptrion Light ch{self._channel_id}"
         self._attr_unique_id = f"{hub_serial}_ch{self._channel_id}_minimal_light"
@@ -60,21 +60,22 @@ class ZeptrionAirMinimalLightSwitch(LightEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if light is on.".""
+        """Return true if light is on."""
         return self._attr_is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the light on (does nothing in minimal).".""
+        """Turn the light on (does nothing in minimal)."""
         _LOGGER.debug(f"{self.name}: Minimal async_turn_on called.")
         # self._attr_is_on = True # No state change, no API call
         # self.async_write_ha_state()
         pass
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the light off (does nothing in minimal).".""
+        """Turn the light off (does nothing in minimal)."""
         _LOGGER.debug(f"{self.name}: Minimal async_turn_off called.")
         # self._attr_is_on = False # No state change, no API call
         # self.async_write_ha_state()
         pass
 
 # Do NOT include ZeptrionAirLightDimmable or other complex logic for this step.
+
