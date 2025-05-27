@@ -84,7 +84,7 @@ async def async_setup_entry(
     # hass.config_entries.async_update_entry(entry, unique_id=serial_number) # Requires careful consideration
 
     model = zrap_id_data.get('type', 'Zeptrion Air Device')
-    sw_version = zrap_id_data.get('sw')
+    sw_version_raw = zrap_id_data.get('sw') # Renamed to sw_version_raw
     hub_name = entry.title or hostname.replace('.local', '') # Use entry title if available
 
     hub_device_info = {
@@ -92,9 +92,15 @@ async def async_setup_entry(
         "name": hub_name,
         "manufacturer": "Feller AG", # Manufacturer is fixed
         "model": model,
-        "sw_version": sw_version,
+        # "sw_version" will be added conditionally below
         "connections": {(device_registry.CONNECTION_UPNP, hostname)}, # For linking via network
     }
+
+    if isinstance(sw_version_raw, str) and sw_version_raw.strip():
+        hub_device_info["sw_version"] = sw_version_raw.strip()
+        LOGGER.debug(f"Using software version for hub {serial_number}: {sw_version_raw.strip()}")
+    else:
+        LOGGER.debug(f"No valid software version found for hub {serial_number} (raw: '{sw_version_raw}'). Omitting sw_version from device info.")
     
     # Register the hub device in HA Device Registry
     # This replaces the later device_registry call using coordinator data if coordinator is not primary source for this.
