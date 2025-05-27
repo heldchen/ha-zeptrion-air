@@ -34,49 +34,55 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Zeptrion Air cover entities from a config entry."""
-    hub_data = hass.data[DOMAIN][entry.entry_id]
-    api_client = hub_data["api_client"]
-    # This hub_device_info is for the main Zeptrion Air device (the hub).
-    # Blind entities will be linked to this hub device.
-    hub_device_info_for_linking = hub_data["hub_device_info"] # Device info of the hub
-    blind_channel_ids = hub_data["blind_channels"]
-    # entry_title from hub_data is the name of the hub (e.g., "zapp-12345" or user-set title)
-    hub_name_for_prefix = hub_data["entry_title"] 
-    hub_serial = hub_data["hub_serial"] # Serial of the hub, for unique IDs of blinds
+    platform_data = hass.data[DOMAIN].get(entry.entry_id)
+
+    if not platform_data:
+        _LOGGER.error(f"cover.py async_setup_entry: No platform_data found for entry ID {entry.entry_id}")
+        return
+
+    _LOGGER.debug(f"cover.py async_setup_entry: Received platform_data: {platform_data}")
+
+    api_client = platform_data.get("client") # Adjusted key from "api_client"
+    main_hub_device_info = platform_data.get("hub_device_info", {})
+    blind_channel_ids = platform_data.get("blind_channels", [])
+    hub_entry_title = platform_data.get("entry_title", "Zeptrion Air Hub") # Default if not found
+    hub_serial_for_blinds = platform_data.get("hub_serial")
+
+    _LOGGER.debug(f"cover.py async_setup_entry: Blind channel IDs: {blind_channel_ids}")
+
+    if not api_client or not hub_serial_for_blinds:
+        _LOGGER.error("cover.py async_setup_entry: API client or hub serial not found in platform_data.")
+        return
 
     new_entities = []
     if blind_channel_ids:
         for channel_id in blind_channel_ids:
-            # Each blind is a separate HA device, but linked to the main Zeptrion (Hub) device.
-            # Construct device_info for this specific blind entity/device.
-            # The unique identifier for the blind's own device entry in HA.
-            blind_device_identifier = (DOMAIN, f"{hub_serial}_ch{channel_id}")
+            _LOGGER.debug(f"cover.py: Creating ZeptrionAirBlind entity for channel ID: {channel_id}")
             
-            blind_device_info_for_entity = {
-                "identifiers": {blind_device_identifier},
-                "name": f"{hub_name_for_prefix} Blind Ch{channel_id}",
-                # Link to the hub device using its identifiers.
-                # hub_device_info_for_linking['identifiers'] is a set of tuples.
-                "via_device": next(iter(hub_device_info_for_linking["identifiers"])),
-                # Other fields like model, manufacturer can be inherited from hub or be specific if known
-                "manufacturer": hub_device_info_for_linking.get("manufacturer"),
-                "model": f"Zeptrion Air Blind Channel {channel_id}", # Specific model for the blind
-                "sw_version": hub_device_info_for_linking.get("sw_version"),
+            blind_device_info = {
+                "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
+                "name": f"{hub_entry_title} Blind Ch{channel_id}",
+                "via_device": (DOMAIN, hub_serial_for_blinds), # Corrected via_device
+                "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
+                "model": f"Zeptrion Air Blind Ch{channel_id}", # Model for the blind sub-device
+                "sw_version": main_hub_device_info.get("sw_version"),
             }
 
             new_entities.append(
                 ZeptrionAirBlind(
-                    api_client=api_client,
-                    device_info_for_blind_entity=blind_device_info_for_entity,
+                    api_client=api_client, # Pass the client instance
+                    device_info_for_blind_entity=blind_device_info,
                     channel_id=channel_id,
-                    hub_serial=hub_serial, # Used for more specific unique ID if needed by entity
-                    entry_title=hub_name_for_prefix # Hub's name, for consistent naming
+                    hub_serial=hub_serial_for_blinds, 
+                    entry_title=hub_entry_title 
                 )
             )
     
     if new_entities:
+        _LOGGER.debug(f"cover.py: Adding {len(new_entities)} ZeptrionAirBlind entities.")
         async_add_entities(new_entities)
-    # If no blinds found, no entities are added.
+    else:
+        _LOGGER.debug("cover.py: No blind entities to add.")
 
 
 class ZeptrionAirBlind(CoverEntity):
