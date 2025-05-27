@@ -49,10 +49,10 @@ async def async_setup_entry(
 
     try:
         device_data_api = await api_client.async_get_device_identification()
-        all_channels_scan = await api_client.async_get_all_channels_scan_info()
-        # Added debug log for full chscan response
-        LOGGER.debug(f"Full /zrap/chscan response for {hostname}: {all_channels_scan}")
-    except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e: # More specific exceptions
+        # Removed all_channels_scan, replaced by channel_des_data
+        channel_des_data = await api_client.async_get_channel_descriptions()
+        LOGGER.debug(f"Full /zrap/chdes response for {hostname}: {channel_des_data}") # Using hostname as hub_name defined later
+    except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
         LOGGER.error(f"Failed to connect or communicate with Zeptrion Air device {hostname}: {e}")
         return False
     except Exception as e: # Catch any other unexpected error during setup
@@ -107,47 +107,72 @@ async def async_setup_entry(
         **hub_device_info # Pass the prepared dict
     )
 
-    # Identify Blind Channels
-    blind_channel_ids = []
-    # Example structure: {'chscan': {'ch1': {'val': '0'}, 'ch2': {'val': '-1'}}}
-    # Or for multiple channels: {'chscan': {'ch': [{'@id': '1', 'val': '0'}, ...]}}
-    # The api.py returns parsed XML, so need to handle its structure.
-    # Let's assume api.py's _api_xml_wrapper returns something like:
-    # {'chscan': {'ch1': {'val': '0'}, 'ch2': {'val': '100'}, 'ch3': {'val': '-1'}}} for single device scan
-    # or {'chscan': {'ch': [{'val': '0', '@id': '1'}, {'val': '-1', '@id': '2'}]} if structure is list
+    # Identify channels using /zrap/chdes
+    identified_channels = []
+    # Assuming hub_name is defined before this block, as in the original code.
+    # If not, use hostname for logging here.
     
-    # Adjusted scan_data access and added debug log
-    scan_data = all_channels_scan.get('zrap', {}).get('chscan', {})
-    LOGGER.debug(f"Extracted 'chscan' data for {hub_name}: {scan_data}")
+    chdes_root = channel_des_data.get('zrap', {}).get('chdes', {})
+    LOGGER.debug(f"Extracted 'chdes' data for {hub_name}: {chdes_root}")
 
-    if scan_data:
-        # Check if 'ch' is a list (multiple channels) or dict (single channel)
-        channels = scan_data.get('ch')
-        if channels:
-            if not isinstance(channels, list):
-                channels = [channels] # Make it a list for consistent processing
-            for channel_data in channels:
-                if isinstance(channel_data, dict) and channel_data.get('val') == '-1':
-                    channel_id_str = channel_data.get('@id') # Assuming @id for channel number
-                    # Added debug log before appending
-                    LOGGER.debug(f"List processing: Found potential blind channel: ID='{channel_id_str}', Data='{channel_data}'")
-                    if channel_id_str:
-                        try:
-                            blind_channel_ids.append(int(channel_id_str))
-                        except ValueError:
-                            LOGGER.warning(f"Invalid channel ID format: {channel_id_str}")
-        else: # Fallback for structure like {'ch1': {'val': '0'}, ...}
-            for key, value_dict in scan_data.items():
-                if key.startswith('ch') and isinstance(value_dict, dict) and value_dict.get('val') == '-1':
-                    channel_id_str = key[2:] # Extract number from 'chX'
-                    # Added debug log before appending
-                    LOGGER.debug(f"Fallback key processing: Found potential blind channel from key: ID='{channel_id_str}', Data='{value_dict}'")
-                    try:
-                        blind_channel_ids.append(int(channel_id_str))
-                    except ValueError:
-                        LOGGER.warning(f"Invalid channel key format: {key}")
-                        
-    LOGGER.info(f"Identified blind channels for {hub_name}: {blind_channel_ids}")
+    raw_channels_from_chdes = []
+    if chdes_root:
+        if 'ch' in chdes_root: # Case: {'chdes': {'ch': [...] or {...}}}
+            raw_channels_data = chdes_root['ch']
+            if isinstance(raw_channels_data, list):
+                raw_channels_from_chdes = raw_channels_data
+            elif isinstance(raw_channels_data, dict):
+                raw_channels_from_chdes = [raw_channels_data] # Single channel entry
+        else: # Case: {'chdes': {'ch1': {...}, 'ch2': {...}}}
+            for key, value_dict in chdes_root.items():
+                if key.startswith('ch') and isinstance(value_dict, dict):
+                    # Add the channel number as 'id' if not present, or ensure it's consistent
+                    # xmltodict might put ch1 content directly, ch number is key
+                    value_dict_copy = value_dict.copy() # Avoid modifying original
+                    if 'id' not in value_dict_copy and '@id' not in value_dict_copy : # If 'id' or '@id' is not in the dict from chX
+                         value_dict_copy['id_from_key'] = key[2:] # Store ch number from key e.g. "1" from "ch1"
+                    raw_channels_from_chdes.append(value_dict_copy)
+    
+    LOGGER.debug(f"Raw channels list from /zrap/chdes for {hub_name}: {raw_channels_from_chdes}")
+
+    for channel_data in raw_channels_from_chdes:
+        channel_id_str = channel_data.get('@id', channel_data.get('id', channel_data.get('id_from_key')))
+        cat_str = channel_data.get('cat', channel_data.get('@cat')) # API doc uses 'cat' as element
+        name = channel_data.get('name')
+        # API doc example uses 'group' for friendly name, 'icon' for icon
+        friendly_name = channel_data.get('group') 
+        icon = channel_data.get('icon')
+        
+        channel_name = friendly_name or name # Use group (as friendly_name) if available, else name
+
+        if channel_id_str is None or cat_str is None:
+            LOGGER.debug(f"Ignoring channel, missing id or cat: ID='{channel_id_str}', Cat='{cat_str}', Data='{channel_data}'")
+            continue
+
+        try:
+            channel_id_int = int(channel_id_str)
+            cat_int = int(cat_str)
+        except ValueError:
+            LOGGER.warning(f"Could not parse channel ID '{channel_id_str}' or category '{cat_str}' to int. Skipping.")
+            continue
+
+        # Categories for blinds/shutters: 1 (Jalousie), 3 (Store), 5 (Rollladen), 6 (Markise)
+        # Assuming these are the correct category integers based on typical Zeptrion usage.
+        if cat_int in [1, 3, 5, 6]:
+            channel_info = {
+                "id": channel_id_int,
+                "cat": cat_int,
+                "name": channel_name, # This is the 'friendly_name' or 'name'
+                "icon": icon,
+                "type": "cover" # Explicitly type it for platform setup
+            }
+            identified_channels.append(channel_info)
+            LOGGER.debug(f"Identified usable COVER channel for {hub_name}: {channel_info}")
+        else:
+            # Could add logic here for other types e.g. lights (cat 0, 2, 4, 7) if a 'switch' platform is added
+            LOGGER.debug(f"Ignoring channel id {channel_id_int} with cat '{cat_int}' (name: '{channel_name}') for {hub_name} as it's not a recognized cover type.")
+
+    LOGGER.info(f"Final identified usable channels for {hub_name}: {identified_channels}")
 
     # Get the integration object (no await needed)
     integration_obj = async_get_loaded_integration(hass, entry.domain)
@@ -165,14 +190,10 @@ async def async_setup_entry(
     entry.runtime_data = zeptrion_air_data_for_runtime
 
     # Prepare platform_setup_data Dictionary for hass.data
-    # This dictionary should contain all keys that platforms (like cover.py) expect.
-    # Note: cover.py was written expecting "api_client", "entry_title", "hub_serial".
-    # Using "client" here as per prompt, which means cover.py might need an update or this key should be "api_client".
-    # For now, following prompt to use "client".
     platform_setup_data = {
         "client": api_client, 
         "hub_device_info": hub_device_info, # For the main Zeptrion Air device/hub
-        "blind_channels": blind_channel_ids,
+        "identified_channels": identified_channels, # New key with list of channel_info dicts
         "entry_title": hub_name, # Name of the hub entry (derived from entry.title or hostname)
         "hub_serial": serial_number, # Unique ID of the hub
         "coordinator": coordinator # Platforms might need the coordinator instance
