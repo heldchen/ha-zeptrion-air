@@ -137,26 +137,49 @@ async def async_setup_entry(
                         
     LOGGER.info(f"Identified blind channels for {hub_name}: {blind_channel_ids}")
 
-    # Store common data for platforms
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "api_client": api_client,
-        "hub_device_info": hub_device_info, # Device info for the hub itself
+    # Prepare hub_data which will be used for both entry.runtime_data and hass.data
+    hub_data = {
+        "client": api_client, # Renamed from "api_client"
+        "hub_device_info": hub_device_info,
         "blind_channels": blind_channel_ids,
-        "entry_title": hub_name, # Consistent name for entities
-        "hub_serial": serial_number # For unique ID generation of entities
+        "entry_title": hub_name,
+        "hub_serial": serial_number,
+        "integration": async_get_loaded_integration(hass, entry.domain) # For ZeptrionAirData
     }
+
+    # Assign to entry.runtime_data before coordinator instantiation
+    # The coordinator will access client and integration via entry.runtime_data
+    entry.runtime_data = ZeptrionAirData(**hub_data) # Pass all hub_data to ZeptrionAirData constructor
+
+    # Store common data for platforms (can still be useful for direct access in platform setup)
+    # Platforms will access hass.data[DOMAIN][entry.entry_id].client etc.
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry.runtime_data 
     
-    # Setup coordinator if it's used for other platforms or continuous updates
-    # The original code had a coordinator, let's keep its setup if needed.
-    # If only cover platform is used and it doesn't need polling, coordinator might be optional.
-    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
-    # entry.runtime_data was used for coordinator, let's adapt if we keep it
-    # For now, assuming coordinator is mainly for other sensor/switch platforms that might need polling
-    if not hasattr(entry, 'runtime_data') or entry.runtime_data is None:
-         entry.runtime_data = ZeptrionAirData(client=api_client, integration=async_get_loaded_integration(hass, entry.domain), coordinator=coordinator)
-    else: # If runtime_data exists from a previous setup (e.g. reload)
-        entry.runtime_data.client = api_client
-        entry.runtime_data.coordinator = coordinator
+    # Setup coordinator
+    # The coordinator's constructor should be able to pick up entry.runtime_data if it needs it,
+    # or it's passed implicitly via hass object which can access entry.
+    # Based on the prompt, it should be `ZeptrionAirDataUpdateCoordinator(hass=hass)`
+    # The ZeptrionAirDataUpdateCoordinator's __init__ needs to be checked if it expects client via its constructor
+    # or if it retrieves it from entry.runtime_data.
+    # The original code passed `client=api_client`. If the coordinator's __init__ is:
+    # `def __init__(self, hass: HomeAssistant, client: ZeptrionAirApiClient)`
+    # then it needs the client.
+    # If its __init__ is `def __init__(self, hass: HomeAssistant, entry: ConfigEntry)`
+    # then it can get it from `entry.runtime_data.client`.
+    # The prompt states: "The coordinator should now pick up the client from entry.runtime_data.client"
+    # This implies the coordinator's constructor might not need `client` directly.
+    # Let's assume ZeptrionAirDataUpdateCoordinator is updated to fetch client from entry.runtime_data if not provided.
+    # Or, more directly, the coordinator is now part of ZeptrionAirData.
+    
+    # The original code in this file (before current changes) was:
+    # coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
+    # entry.runtime_data = ZeptrionAirData(client=api_client, integration=..., coordinator=coordinator)
+    # This structure means ZeptrionAirData holds the coordinator.
+    # Let's adjust to match the new structure where entry.runtime_data IS ZeptrionAirData.
+
+    # Create the coordinator instance. It will be stored within entry.runtime_data (ZeptrionAirData instance)
+    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # Removed client=api_client
+    entry.runtime_data.coordinator = coordinator # Store coordinator in ZeptrionAirData
 
     await coordinator.async_config_entry_first_refresh() # This fetches /zrap/id again
 
