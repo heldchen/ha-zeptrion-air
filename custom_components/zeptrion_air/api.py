@@ -6,6 +6,7 @@ import logging
 import json
 import socket
 import xmltodict
+from urllib.parse import urlencode # Added import
 
 from typing import Any
 
@@ -57,7 +58,7 @@ class ZeptrionAirApiClient:
         data: dict | None = None,
         headers: dict | None = None,
     ) -> dict:
-        """Get information from the API."""
+        """Get information from the API via XML."""
         try:
             # _LOGGER.info("[API] --> %s %s", method, self._baseurl + path)
             async with async_timeout.timeout(10):
@@ -104,13 +105,15 @@ class ZeptrionAirApiClient:
                     method=method,
                     url=self._baseurl + path,
                     headers=headers,
-                    data=data,
+                    data=data, # For GET, data is typically None or query params in URL
                 )
                 _verify_response_or_raise(response)
 
-                data = await response.text()
-                # _LOGGER.info("[API] <-- %s %s", response.status, data)
-                return xmltodict.parse(data)
+                text_response = await response.text()
+                # _LOGGER.info("[API] <-- %s %s", response.status, text_response)
+                if not text_response: # Handle empty responses for POST/302 potentially
+                    return {}
+                return xmltodict.parse(text_response)
 
         except TimeoutError as exception:
             msg = f"Timeout error fetching information - {exception}"
@@ -127,4 +130,138 @@ class ZeptrionAirApiClient:
             raise ZeptrionAirApiClientError(
                 msg,
             ) from exception
+
+    async def _api_post_url_encoded_wrapper(
+        self,
+        path: str,
+        data: dict, # Expecting a dict to be URL-encoded
+    ) -> dict:
+        """Post URL-encoded data to the API and parse XML response."""
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        encoded_data = urlencode(data)
+        try:
+            # _LOGGER.info("[API] --> POST %s with %s", self._baseurl + path, encoded_data)
+            async with async_timeout.timeout(10):
+                response = await self._session.request(
+                    method="post",
+                    url=self._baseurl + path,
+                    headers=headers,
+                    data=encoded_data,
+                )
+                # Responses to POST /zrap/chctrl are 302 Found,
+                # aiohttp follows redirects by default.
+                # The final response after redirect might be empty or HTML.
+                # We attempt to parse XML for consistency, but handle errors.
+                _verify_response_or_raise(response)
+
+
+                # The API doc says 302 for /zrap/chctrl.
+                # aiohttp handles redirects by default. The final page might not be XML.
+                # Or it might be an error page in XML.
+                # If the final response is empty or not XML, xmltodict will raise an ExpatError.
+                text_response = await response.text()
+                # _LOGGER.info("[API] <-- %s %s", response.status, text_response)
+                if not text_response: # Handle empty responses
+                    return {}
+                try:
+                    return xmltodict.parse(text_response)
+                except xmltodict.expat.ExpatError:
+                    _LOGGER.debug("Response was not XML after POST to %s: %s", path, text_response)
+                    return {"non_xml_response": text_response}
+
+
+        except TimeoutError as exception:
+            msg = f"Timeout error posting URL-encoded data to {path} - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(
+                msg,
+            ) from exception
+        except (aiohttp.ClientError, socket.gaierror) as exception:
+            msg = f"Error posting URL-encoded data to {path} - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(
+                msg,
+            ) from exception
+        except Exception as exception:  # pylint: disable=broad-except
+            msg = f"Something really wrong happened posting URL-encoded data to {path}! - {exception}"
+            raise ZeptrionAirApiClientError(
+                msg,
+            ) from exception
+
+    async def async_get_channel_scan_info(self, channel: int) -> dict:
+        """Get the scan info for a specific channel."""
+        return await self._api_xml_wrapper(
+            method="get",
+            path=f"/zrap/chscan/ch{channel}",
+        )
+
+    async def async_get_all_channels_scan_info(self) -> dict:
+        """Get the scan info for all channels."""
+        return await self._api_xml_wrapper(
+            method="get",
+            path="/zrap/chscan",
+        )
+
+    async def async_channel_open(self, channel: int) -> dict:
+        """Send 'open' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "open"},
+        )
+
+    async def async_channel_close(self, channel: int) -> dict:
+        """Send 'close' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "close"},
+        )
+
+    async def async_channel_stop(self, channel: int) -> dict:
+        """Send 'stop' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "stop"},
+        )
+
+    async def async_channel_move_open(self, channel: int, time_ms: int = 500) -> dict:
+        """Send 'move_open_{time_ms}' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": f"move_open_{time_ms}"},
+        )
+
+    async def async_channel_move_close(self, channel: int, time_ms: int = 500) -> dict:
+        """Send 'move_close_{time_ms}' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": f"move_close_{time_ms}"},
+        )
+
+    async def async_channel_recall_s1(self, channel: int) -> dict:
+        """Send 'recall_s1' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "recall_s1"},
+        )
+
+    async def async_channel_recall_s2(self, channel: int) -> dict:
+        """Send 'recall_s2' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "recall_s2"},
+        )
+
+    async def async_channel_recall_s3(self, channel: int) -> dict:
+        """Send 'recall_s3' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "recall_s3"},
+        )
+
+    async def async_channel_recall_s4(self, channel: int) -> dict:
+        """Send 'recall_s4' command to a channel."""
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "recall_s4"},
+        )
 
