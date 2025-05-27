@@ -223,14 +223,14 @@ class ZeptrionAirApiClient:
             data={"cmd": "stop"},
         )
 
-    async def async_channel_move_open(self, channel: int, time_ms: int = 500) -> dict:
+    async def async_channel_move_open(self, channel: int, time_ms: int = 100) -> dict:
         """Send 'move_open_{time_ms}' command to a channel."""
         return await self._api_post_url_encoded_wrapper(
             path=f"/zrap/chctrl/ch{channel}",
             data={"cmd": f"move_open_{time_ms}"},
         )
 
-    async def async_channel_move_close(self, channel: int, time_ms: int = 500) -> dict:
+    async def async_channel_move_close(self, channel: int, time_ms: int = 100) -> dict:
         """Send 'move_close_{time_ms}' command to a channel."""
         return await self._api_post_url_encoded_wrapper(
             path=f"/zrap/chctrl/ch{channel}",

@@ -169,6 +169,23 @@ async def async_setup_entry(
             # device_type will be added below based on cat_int
         }
 
+        # Construct resolved_entity_name
+        resolved_entity_name: str
+        # friendly_name is api_group, name is api_name from channel_data
+        if friendly_name and friendly_name.strip():
+            if name and name.strip():
+                resolved_entity_name = f"{hub_name} {friendly_name.strip()} - {name.strip()}"
+            else:
+                resolved_entity_name = f"{hub_name} {friendly_name.strip()}"
+        elif name and name.strip():
+            resolved_entity_name = f"{hub_name} {name.strip()}"
+        else:
+            resolved_entity_name = f"{hub_name} Channel {channel_id_int}"
+        
+        channel_info["entity_base_name"] = resolved_entity_name
+        LOGGER.debug(f"Constructed entity_base_name for ch {channel_id_int}: '{resolved_entity_name}' from api_group: '{friendly_name}', api_name: '{name}'")
+
+
         if cat_int == 1: # Light Switch
             channel_info["device_type"] = "light_switch"
             identified_channels.append(channel_info)
