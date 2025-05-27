@@ -49,6 +49,8 @@ async def async_setup_entry(
     try:
         device_data_api = await api_client.async_get_device_identification()
         all_channels_scan = await api_client.async_get_all_channels_scan_info()
+        # Added debug log for full chscan response
+        LOGGER.debug(f"Full /zrap/chscan response for {hostname}: {all_channels_scan}")
     except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e: # More specific exceptions
         LOGGER.error(f"Failed to connect or communicate with Zeptrion Air device {hostname}: {e}")
         return False
@@ -111,7 +113,10 @@ async def async_setup_entry(
     # {'chscan': {'ch1': {'val': '0'}, 'ch2': {'val': '100'}, 'ch3': {'val': '-1'}}} for single device scan
     # or {'chscan': {'ch': [{'val': '0', '@id': '1'}, {'val': '-1', '@id': '2'}]} if structure is list
     
-    scan_data = all_channels_scan.get('chscan', {})
+    # Adjusted scan_data access and added debug log
+    scan_data = all_channels_scan.get('zrap', {}).get('chscan', {})
+    LOGGER.debug(f"Extracted 'chscan' data for {hub_name}: {scan_data}")
+
     if scan_data:
         # Check if 'ch' is a list (multiple channels) or dict (single channel)
         channels = scan_data.get('ch')
@@ -121,6 +126,8 @@ async def async_setup_entry(
             for channel_data in channels:
                 if isinstance(channel_data, dict) and channel_data.get('val') == '-1':
                     channel_id_str = channel_data.get('@id') # Assuming @id for channel number
+                    # Added debug log before appending
+                    LOGGER.debug(f"List processing: Found potential blind channel: ID='{channel_id_str}', Data='{channel_data}'")
                     if channel_id_str:
                         try:
                             blind_channel_ids.append(int(channel_id_str))
@@ -129,8 +136,10 @@ async def async_setup_entry(
         else: # Fallback for structure like {'ch1': {'val': '0'}, ...}
             for key, value_dict in scan_data.items():
                 if key.startswith('ch') and isinstance(value_dict, dict) and value_dict.get('val') == '-1':
+                    channel_id_str = key[2:] # Extract number from 'chX'
+                    # Added debug log before appending
+                    LOGGER.debug(f"Fallback key processing: Found potential blind channel from key: ID='{channel_id_str}', Data='{value_dict}'")
                     try:
-                        channel_id_str = key[2:] # Extract number from 'chX'
                         blind_channel_ids.append(int(channel_id_str))
                     except ValueError:
                         LOGGER.warning(f"Invalid channel key format: {key}")
