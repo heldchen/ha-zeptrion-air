@@ -92,14 +92,14 @@ async def async_setup_entry(
                 "name": desired_name, # Use the name from entity_base_name
                 "via_device": (DOMAIN, hub_serial_for_blinds), 
                 "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
-                    "sw_version": main_hub_device_info.get("sw_version"),
-                    # "suggested_area": can be explored if needed
-                }
-                panel_type_string = panel_type_mapping.get(channel_cat, "Unknown Panel")
-                blind_device_info["model"] = f"Zeptrion Air Channel {channel_id} - {panel_type_string}"
+                "sw_version": main_hub_device_info.get("sw_version"),
+                # "suggested_area": can be explored if needed
+            }
+            panel_type_string = panel_type_mapping.get(channel_cat, "Unknown Panel")
+            blind_device_info["model"] = f"Zeptrion Air Channel {channel_id} - {panel_type_string}"
 
-                new_entities.append(
-                    ZeptrionAirBlind(
+            new_entities.append(
+                ZeptrionAirBlind(
                         api_client=api_client,
                         device_info_for_blind_entity=blind_device_info,
                         channel_id=channel_id,
