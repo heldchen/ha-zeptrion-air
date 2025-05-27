@@ -23,4 +23,4 @@ SERVICE_BLIND_RECALL_S3 = "blind_recall_s3"
 SERVICE_BLIND_RECALL_S4 = "blind_recall_s4"
 
 # Platforms
-PLATFORMS = ["cover", "light"] # Added "light", switch still removed
+PLATFORMS = ["cover"] # Added "light", switch still removed
