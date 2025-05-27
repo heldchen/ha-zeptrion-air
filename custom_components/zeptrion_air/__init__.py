@@ -85,19 +85,8 @@ async def async_setup_entry(
     # hass.config_entries.async_update_entry(entry, unique_id=serial_number) # Requires careful consideration
 
     model = zrap_id_data.get('type', 'Zeptrion Air Device')
-    sw_version_raw = zrap_id_data.get('sw')
+    # sw_version_raw and parsed_sw_version logic is removed.
     hub_name = entry.title or hostname.replace('.local', '') # Use entry title if available
-
-    parsed_sw_version = None
-    if isinstance(sw_version_raw, str):
-        # Try to match patterns like XX.YY.ZZ or XX.YY at the beginning of the string
-        match = re.match(r"^(\d{1,2}\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?|\d{1,2}\.\d{1,2})", sw_version_raw)
-        if match:
-            parsed_sw_version = match.group(1)
-            LOGGER.debug(f"Parsed software version '{parsed_sw_version}' from raw value '{sw_version_raw}'")
-        else:
-            LOGGER.debug(f"Could not parse a standard version from raw sw_version_raw: '{sw_version_raw}'.")
-            # If regex fails, parsed_sw_version remains None.
 
     hub_device_info = {
         "identifiers": {(DOMAIN, serial_number)}, # Use API serial number as primary identifier
@@ -105,14 +94,11 @@ async def async_setup_entry(
         "manufacturer": "Feller AG", # Manufacturer is fixed
         "model": model,
         "connections": {(device_registry.CONNECTION_UPNP, hostname)}, # For linking via network
+        # "sw_version" is intentionally omitted.
     }
-
-    if parsed_sw_version: # Check if parsed_sw_version is not None (and thus non-empty)
-        hub_device_info["sw_version"] = parsed_sw_version
-        LOGGER.debug(f"Using software version for hub {serial_number}: {parsed_sw_version}")
-    else:
-        LOGGER.debug(f"No parsable software version found for hub {serial_number} (raw: '{sw_version_raw}'). Omitting sw_version from device info.")
     
+    LOGGER.debug(f"Constructed hub_device_info for {serial_number} (sw_version omitted for testing): {hub_device_info}")
+
     # Register the hub device in HA Device Registry
     # This replaces the later device_registry call using coordinator data if coordinator is not primary source for this.
     registry = device_registry.async_get(hass)
