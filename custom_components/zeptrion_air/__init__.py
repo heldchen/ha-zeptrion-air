@@ -8,9 +8,10 @@ https://github.com/heldchen/ha-zeptrion-air
 from __future__ import annotations
 
 import logging
+import re # Added import
 from typing import TYPE_CHECKING
 
-from homeassistant.const import Platform # Removed CONF_PASSWORD, CONF_USERNAME as they are not used here
+from homeassistant.const import Platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.helpers import device_registry
@@ -84,23 +85,33 @@ async def async_setup_entry(
     # hass.config_entries.async_update_entry(entry, unique_id=serial_number) # Requires careful consideration
 
     model = zrap_id_data.get('type', 'Zeptrion Air Device')
-    sw_version_raw = zrap_id_data.get('sw') # Renamed to sw_version_raw
+    sw_version_raw = zrap_id_data.get('sw')
     hub_name = entry.title or hostname.replace('.local', '') # Use entry title if available
+
+    parsed_sw_version = None
+    if isinstance(sw_version_raw, str):
+        # Try to match patterns like XX.YY.ZZ or XX.YY at the beginning of the string
+        match = re.match(r"^(\d{1,2}\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?|\d{1,2}\.\d{1,2})", sw_version_raw)
+        if match:
+            parsed_sw_version = match.group(1)
+            LOGGER.debug(f"Parsed software version '{parsed_sw_version}' from raw value '{sw_version_raw}'")
+        else:
+            LOGGER.debug(f"Could not parse a standard version from raw sw_version_raw: '{sw_version_raw}'.")
+            # If regex fails, parsed_sw_version remains None.
 
     hub_device_info = {
         "identifiers": {(DOMAIN, serial_number)}, # Use API serial number as primary identifier
         "name": hub_name,
         "manufacturer": "Feller AG", # Manufacturer is fixed
         "model": model,
-        # "sw_version" will be added conditionally below
         "connections": {(device_registry.CONNECTION_UPNP, hostname)}, # For linking via network
     }
 
-    if isinstance(sw_version_raw, str) and sw_version_raw.strip():
-        hub_device_info["sw_version"] = sw_version_raw.strip()
-        LOGGER.debug(f"Using software version for hub {serial_number}: {sw_version_raw.strip()}")
+    if parsed_sw_version: # Check if parsed_sw_version is not None (and thus non-empty)
+        hub_device_info["sw_version"] = parsed_sw_version
+        LOGGER.debug(f"Using software version for hub {serial_number}: {parsed_sw_version}")
     else:
-        LOGGER.debug(f"No valid software version found for hub {serial_number} (raw: '{sw_version_raw}'). Omitting sw_version from device info.")
+        LOGGER.debug(f"No parsable software version found for hub {serial_number} (raw: '{sw_version_raw}'). Omitting sw_version from device info.")
     
     # Register the hub device in HA Device Registry
     # This replaces the later device_registry call using coordinator data if coordinator is not primary source for this.
