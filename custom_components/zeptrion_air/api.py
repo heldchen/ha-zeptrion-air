@@ -303,18 +303,23 @@ class ZeptrionAirApiClient:
         )
 
     async def async_channel_set_brightness(self, channel: int, brightness_0_255: int) -> dict:
-        """Placeholder for sending 'dim' command with brightness to a channel."""
-        # Convert HA brightness (0-255) to API brightness (e.g., 0-100 or other)
-        # This is a placeholder; actual API command for brightness needs to be confirmed.
-        # Example: api_brightness = round(brightness_0_255 * 100 / 255)
-        # data_payload = {"cmd": "dim", "val": api_brightness} # Or whatever the API expects
+        """Send 'dim' command with brightness value to a channel."""
+        # Convert HA brightness (0-255) to API brightness (0-100)
+        api_brightness = int(round(brightness_0_255 * 100 / 255))
+
+        # Ensure api_brightness is within the 0-100 range after conversion,
+        # though standard rounding should keep it within bounds if input is 0-255.
+        api_brightness = max(0, min(100, api_brightness))
+
+        data_payload = {"cmd": "dim", "val": api_brightness}
         
-        _LOGGER.warning(
-            f"Placeholder: async_channel_set_brightness called for channel {channel} "
-            f"on {self._hostname} with HA brightness {brightness_0_255}. "
-            f"Actual API call not implemented."
+        _LOGGER.debug(
+            f"Sending 'dim' command to channel {channel} on {self._hostname} "
+            f"with HA brightness {brightness_0_255} (API value: {api_brightness})"
         )
-        # To avoid errors if this is called, return an empty dict like other control commands.
-        # In a real implementation, this would call _api_post_url_encoded_wrapper.
-        return {"status": "brightness_placeholder_not_implemented"}
+        
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data=data_payload,
+        )
 

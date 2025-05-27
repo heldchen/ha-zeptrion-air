@@ -112,7 +112,7 @@ async def async_setup_entry(
     # Assuming hub_name is defined before this block, as in the original code.
     # If not, use hostname for logging here.
     
-    chdes_root = channel_des_data.get('zrap', {}).get('chdes', {})
+    chdes_root = channel_des_data.get('chdes', {}) # Corrected parsing
     LOGGER.debug(f"Extracted 'chdes' data for {hub_name}: {chdes_root}")
 
     raw_channels_from_chdes = []
@@ -158,19 +158,31 @@ async def async_setup_entry(
 
         # Categories for blinds/shutters: 1 (Jalousie), 3 (Store), 5 (Rollladen), 6 (Markise)
         # Assuming these are the correct category integers based on typical Zeptrion usage.
-        if cat_int in [1, 3, 5, 6]:
-            channel_info = {
-                "id": channel_id_int,
-                "cat": cat_int,
-                "name": channel_name, # This is the 'friendly_name' or 'name'
-                "icon": icon,
-                "type": "cover" # Explicitly type it for platform setup
-            }
+        
+        channel_info = {
+            "id": channel_id_int,
+            "cat": cat_int,
+            "name": channel_name, # This is the 'friendly_name' or 'name'
+            "icon": icon
+            # device_type will be added below based on cat_int
+        }
+
+        if cat_int == 1: # Light Switch
+            channel_info["device_type"] = "light_switch"
             identified_channels.append(channel_info)
-            LOGGER.debug(f"Identified usable COVER channel for {hub_name}: {channel_info}")
+            LOGGER.debug(f"Identified usable channel for {hub_name}: {channel_info}")
+        elif cat_int == 3: # Light Dimmer
+            channel_info["device_type"] = "light_dimmer"
+            identified_channels.append(channel_info)
+            LOGGER.debug(f"Identified usable channel for {hub_name}: {channel_info}")
+        elif cat_int == 5 or cat_int == 6: # Cover (Rollladen, Markise)
+            channel_info["device_type"] = "cover"
+            identified_channels.append(channel_info)
+            LOGGER.debug(f"Identified usable channel for {hub_name}: {channel_info}")
         else:
             # Could add logic here for other types e.g. lights (cat 0, 2, 4, 7) if a 'switch' platform is added
-            LOGGER.debug(f"Ignoring channel id {channel_id_int} with cat '{cat_int}' (name: '{channel_name}') for {hub_name} as it's not a recognized cover type.")
+            LOGGER.debug(f"Ignoring channel id {channel_id_int} with cat '{cat_int}' (name: '{channel_name}') for {hub_name} as it's not a recognized device type.")
+            continue # Skip adding this channel
 
     LOGGER.info(f"Final identified usable channels for {hub_name}: {identified_channels}")
 
