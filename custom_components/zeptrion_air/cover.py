@@ -42,44 +42,62 @@ async def async_setup_entry(
 
     _LOGGER.debug(f"cover.py async_setup_entry: Received platform_data: {platform_data}")
 
-    api_client = platform_data.get("client") # Adjusted key from "api_client"
+    api_client = platform_data.get("client")
     main_hub_device_info = platform_data.get("hub_device_info", {})
-    blind_channel_ids = platform_data.get("blind_channels", [])
-    hub_entry_title = platform_data.get("entry_title", "Zeptrion Air Hub") # Default if not found
+    # Retrieve identified_channels instead of blind_channel_ids
+    identified_channels_list = platform_data.get("identified_channels", [])
+    hub_entry_title = platform_data.get("entry_title", "Zeptrion Air Hub") 
     hub_serial_for_blinds = platform_data.get("hub_serial")
 
-    _LOGGER.debug(f"cover.py async_setup_entry: Blind channel IDs: {blind_channel_ids}")
+    # Updated logging
+    _LOGGER.debug(f"cover.py async_setup_entry: Identified channels list: {identified_channels_list}")
 
     if not api_client or not hub_serial_for_blinds:
         _LOGGER.error("cover.py async_setup_entry: API client or hub serial not found in platform_data.")
         return
 
     new_entities = []
-    if blind_channel_ids:
-        for channel_id in blind_channel_ids:
-            _LOGGER.debug(f"cover.py: Creating ZeptrionAirBlind entity for channel ID: {channel_id}")
-            
-            blind_device_info = {
-                "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
-                "name": f"{hub_entry_title} Blind Ch{channel_id}",
-                "via_device": (DOMAIN, hub_serial_for_blinds), # Corrected via_device
-                "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
-                "model": f"Zeptrion Air Blind Ch{channel_id}", # Model for the blind sub-device
-                "sw_version": main_hub_device_info.get("sw_version"),
-            }
+    if identified_channels_list:
+        for channel_info_dict in identified_channels_list:
+            channel_id = channel_info_dict.get('id')
+            channel_cat = channel_info_dict.get('cat')
+            # Use provided name, fallback to "Channel <id>"
+            channel_name = channel_info_dict.get('name', f"Channel {channel_id}")
+            # channel_icon = channel_info_dict.get('icon') # Extracted, can be used later if needed
 
-            new_entities.append(
-                ZeptrionAirBlind(
-                    api_client=api_client, # Pass the client instance
-                    device_info_for_blind_entity=blind_device_info,
-                    channel_id=channel_id,
-                    hub_serial=hub_serial_for_blinds, 
-                    entry_title=hub_entry_title 
+            if channel_id is None or channel_cat is None:
+                _LOGGER.warning(f"cover.py: Skipping channel due to missing id or cat: {channel_info_dict}")
+                continue
+
+            # Conditional entity creation based on category
+            if channel_cat == 5 or channel_cat == 6: # Blind (5) or Markise/Awning (6)
+                _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}, Name: '{channel_name}'). Type is cover. Creating entity.")
+                
+                blind_device_info = {
+                    "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
+                    # Updated entity naming
+                    "name": f"{hub_entry_title} {channel_name}", 
+                    "via_device": (DOMAIN, hub_serial_for_blinds), 
+                    "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
+                    "model": f"Zeptrion Air Channel - Cat {channel_cat}", 
+                    "sw_version": main_hub_device_info.get("sw_version"),
+                    # "suggested_area": channel_name if it's a room name, could be explored
+                }
+
+                new_entities.append(
+                    ZeptrionAirBlind(
+                        api_client=api_client,
+                        device_info_for_blind_entity=blind_device_info,
+                        channel_id=channel_id,
+                        hub_serial=hub_serial_for_blinds, 
+                        entry_title=hub_entry_title # Hub's name/title for context
+                    )
                 )
-            )
+            else:
+                _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}, Name: '{channel_name}'). Type is NOT cover. Skipping.")
     
     if new_entities:
-        _LOGGER.debug(f"cover.py: Adding {len(new_entities)} ZeptrionAirBlind entities.")
+        _LOGGER.debug(f"cover.py: Adding {len(new_entities)} ZeptrionAirBlind cover entities.")
         async_add_entities(new_entities)
     else:
         _LOGGER.debug("cover.py: No blind entities to add.")

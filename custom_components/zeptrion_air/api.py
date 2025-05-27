@@ -265,3 +265,56 @@ class ZeptrionAirApiClient:
             data={"cmd": "recall_s4"},
         )
 
+    async def async_get_channel_descriptions(self) -> dict:
+        """Fetch channel descriptions from /zrap/chdes."""
+        # This assumes /zrap/chdes returns descriptions for all configured channels.
+        # If it needs to be called per channel (e.g., /zrap/chdes/ch1), this design would need adjustment.
+        _LOGGER.debug(f"Fetching channel descriptions from /zrap/chdes for {self._hostname}")
+        try:
+            response_data = await self._api_xml_wrapper(
+                method="get",
+                path="/zrap/chdes", # Assuming this is the correct path for all channel descriptions
+            )
+            # Add logging for the raw response if helpful for debugging later
+            # _LOGGER.debug(f"/zrap/chdes response: {response_data}")
+            return response_data
+        except ZeptrionAirApiClientCommunicationError as e:
+            _LOGGER.error(f"Communication error fetching channel descriptions from {self._hostname}: {e}")
+            # Re-raise or return empty dict/None to allow caller to handle
+            raise # Or handle more gracefully if preferred (e.g., return {})
+        except ZeptrionAirApiClientError as e: # Catch other client errors
+            _LOGGER.error(f"API client error fetching channel descriptions from {self._hostname}: {e}")
+            raise # Or return {}
+
+    async def async_channel_on(self, channel: int) -> dict:
+        """Send 'on' command to a channel for light control."""
+        _LOGGER.debug(f"Sending 'on' command to channel {channel} on {self._hostname}")
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "on"},
+        )
+
+    async def async_channel_off(self, channel: int) -> dict:
+        """Send 'off' command to a channel for light control."""
+        _LOGGER.debug(f"Sending 'off' command to channel {channel} on {self._hostname}")
+        return await self._api_post_url_encoded_wrapper(
+            path=f"/zrap/chctrl/ch{channel}",
+            data={"cmd": "off"},
+        )
+
+    async def async_channel_set_brightness(self, channel: int, brightness_0_255: int) -> dict:
+        """Placeholder for sending 'dim' command with brightness to a channel."""
+        # Convert HA brightness (0-255) to API brightness (e.g., 0-100 or other)
+        # This is a placeholder; actual API command for brightness needs to be confirmed.
+        # Example: api_brightness = round(brightness_0_255 * 100 / 255)
+        # data_payload = {"cmd": "dim", "val": api_brightness} # Or whatever the API expects
+        
+        _LOGGER.warning(
+            f"Placeholder: async_channel_set_brightness called for channel {channel} "
+            f"on {self._hostname} with HA brightness {brightness_0_255}. "
+            f"Actual API call not implemented."
+        )
+        # To avoid errors if this is called, return an empty dict like other control commands.
+        # In a real implementation, this would call _api_post_url_encoded_wrapper.
+        return {"status": "brightness_placeholder_not_implemented"}
+
