@@ -137,24 +137,8 @@ async def async_setup_entry(
                         
     LOGGER.info(f"Identified blind channels for {hub_name}: {blind_channel_ids}")
 
-    integration_obj = await async_get_loaded_integration(hass, entry.domain)
-    
-    # Initialize Coordinator first as it might be needed by ZeptrionAirData or set on it
-    # Assuming ZeptrionAirDataUpdateCoordinator's __init__ is `def __init__(self, hass, client)`
-    # or that it can get the client from hass.data or entry later if not passed.
-    # The prompt implies coordinator is defined and then passed to ZeptrionAirData.
-    # However, previous steps made coordinator take no client in constructor.
-    # Let's go with coordinator created simply, and client accessed via entry.runtime_data.
-    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # No client arg
-
-    # Instantiate ZeptrionAirData for entry.runtime_data
-    # This instance will hold the client, integration, and coordinator.
-    # The exact fields for ZeptrionAirData's __init__ depend on its definition.
-    # Let's assume a constructor that takes these key components.
-    # Based on previous diffs, ZeptrionAirData was constructed with **hub_data,
-    # and then coordinator was assigned. Let's follow that pattern.
-    
-    integration_obj = await async_get_loaded_integration(hass, entry.domain) # Corrected from entry.domain
+    # Get the integration object (no await needed)
+    integration_obj = async_get_loaded_integration(hass, entry.domain)
     
     # Initialize Coordinator
     coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # No client arg here
