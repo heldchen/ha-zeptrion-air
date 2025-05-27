@@ -37,7 +37,7 @@ async def async_setup_entry(
     return True # Indicate successful setup, even if no entities added.
 
 class ZeptrionAirMinimalLightSwitch(LightEntity):
-    """Minimal representation of a Zeptrion Air Light Switch.".""
+    """Minimal representation of a Zeptrion Air Light Switch."""
 
     _attr_should_poll = False
 
