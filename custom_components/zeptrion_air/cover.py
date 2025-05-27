@@ -111,10 +111,19 @@ async def async_setup_entry(
             # `device_type != "cover"` already handles non-cover channels.
     
     if new_entities:
-        _LOGGER.debug(f"cover.py: Adding {len(new_entities)} ZeptrionAirBlind cover entities.")
+        for entity in new_entities:
+            _LOGGER.debug(
+                "Preparing to add cover entity: Name: %s, Unique ID: %s",
+                entity.name, # Using property entity.name
+                entity.unique_id # Using property entity.unique_id
+            )
+        _LOGGER.info("Adding %s ZeptrionAirBlind cover entities.", len(new_entities))
         async_add_entities(new_entities)
     else:
-        _LOGGER.debug("cover.py: No blind entities to add.")
+        _LOGGER.info("No Zeptrion Air cover entities to add.") # Changed to info as per prompt
+    
+    _LOGGER.info("cover.py: async_setup_entry completed successfully.")
+    return True # Explicitly return True for successful setup
 
 
 class ZeptrionAirBlind(CoverEntity):
@@ -137,6 +146,7 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_name = device_info_for_blind_entity["name"] 
         # The unique_id for the entity, using entry_title (hub's name) and channel_id
         self._attr_unique_id = f"{entry_title}-ch{self._channel_id}"
+        _LOGGER.debug("ZeptrionAirBlind cover entity initialized with Unique ID: %s, Name: %s", self.unique_id, self.name)
 
 
         self._attr_is_closed: bool | None = None  # Position is unknown

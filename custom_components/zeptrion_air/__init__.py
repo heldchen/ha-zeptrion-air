@@ -235,7 +235,11 @@ async def async_setup_entry(
     # The coordinator's _async_update_data method should use entry.runtime_data.client
     await coordinator.async_config_entry_first_refresh()
 
+    LOGGER.debug("Forwarding setup to platforms: %s", ZEPTRION_PLATFORMS)
+    LOGGER.debug("Attempting to forward entry setups for %s.", entry.entry_id)
     await hass.config_entries.async_forward_entry_setups(entry, ZEPTRION_PLATFORMS)
+    LOGGER.debug("Successfully forwarded entry setups for %s.", entry.entry_id)
+    
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     
     # The device registration for the hub is now done earlier with more details.
@@ -244,6 +248,7 @@ async def async_setup_entry(
     # The coordinator.async_config_entry_first_refresh() might be redundant if data is already fetched
     # but doesn't harm, and ensures coordinator has its data if other platforms rely on it.
 
+    LOGGER.info("Zeptrion Air integration setup successfully completed for %s.", entry.title)
     return True
 
 

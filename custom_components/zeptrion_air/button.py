@@ -147,14 +147,35 @@ class ZeptrionAirActionButton(ButtonEntity):
         # Entity ID would be like "cover.zapp_123456_ch1"
         slugified_parent_unique_id = parent_cover_unique_id.replace('-', '_').lower()
         self._parent_cover_entity_id = f"cover.{slugified_parent_unique_id}"
-        _LOGGER.debug(
-            "Button %s for cover %s (channel %s) will target entity_id: %s", 
-            action_label, parent_device_name, channel_id, self._parent_cover_entity_id
-        )
-
+        
+        # Set attributes before logging them
         self._attr_name = f"{parent_device_name} {action_label}"
         self._attr_unique_id = f"{self._hub_entry_title}_ch{self._channel_id}_{self._action_type}_button"
         self._attr_icon = icon
+
+        # Enhanced logging as per plan
+        _LOGGER.debug(
+            "Button __init__ for action '%s' on channel %s for hub '%s':",
+            self._action_type,
+            self._channel_id,
+            self._hub_entry_title 
+        )
+        _LOGGER.debug(
+            "  Parent device name: '%s', Action label: '%s'",
+            parent_device_name, action_label
+        )
+        _LOGGER.debug(
+            "  Received parent_cover_unique_id: '%s'", parent_cover_unique_id
+        )
+        _LOGGER.debug(
+            "  Constructed _parent_cover_entity_id (target for service call): '%s'", self._parent_cover_entity_id
+        )
+        _LOGGER.debug(
+            "  Button's own _attr_name set to: '%s'", self._attr_name 
+        )
+        _LOGGER.debug(
+            "  Button's own _attr_unique_id set to: '%s'", self._attr_unique_id 
+        )
 
         # Link this button to the specific cover channel's device entry in HA
         # This uses the same identifier as the cover entity for that channel.
