@@ -137,51 +137,55 @@ async def async_setup_entry(
                         
     LOGGER.info(f"Identified blind channels for {hub_name}: {blind_channel_ids}")
 
-    # Prepare hub_data which will be used for both entry.runtime_data and hass.data
-    hub_data = {
-        "client": api_client, # Renamed from "api_client"
-        "hub_device_info": hub_device_info,
+    integration_obj = await async_get_loaded_integration(hass, entry.domain)
+    
+    # Initialize Coordinator first as it might be needed by ZeptrionAirData or set on it
+    # Assuming ZeptrionAirDataUpdateCoordinator's __init__ is `def __init__(self, hass, client)`
+    # or that it can get the client from hass.data or entry later if not passed.
+    # The prompt implies coordinator is defined and then passed to ZeptrionAirData.
+    # However, previous steps made coordinator take no client in constructor.
+    # Let's go with coordinator created simply, and client accessed via entry.runtime_data.
+    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # No client arg
+
+    # Instantiate ZeptrionAirData for entry.runtime_data
+    # This instance will hold the client, integration, and coordinator.
+    # The exact fields for ZeptrionAirData's __init__ depend on its definition.
+    # Let's assume a constructor that takes these key components.
+    # Based on previous diffs, ZeptrionAirData was constructed with **hub_data,
+    # and then coordinator was assigned. Let's follow that pattern.
+    
+    integration_obj = await async_get_loaded_integration(hass, entry.domain) # Corrected from entry.domain
+    
+    # Initialize Coordinator
+    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # No client arg here
+
+    # Instantiate ZeptrionAirData CORRECTLY for entry.runtime_data
+    # Pass only the arguments defined in the ZeptrionAirData dataclass.
+    zeptrion_air_data_for_runtime = ZeptrionAirData(
+        client=api_client,
+        coordinator=coordinator, # Pass the coordinator instance
+        integration=integration_obj
+    )
+    entry.runtime_data = zeptrion_air_data_for_runtime
+
+    # Prepare platform_setup_data Dictionary for hass.data
+    # This dictionary should contain all keys that platforms (like cover.py) expect.
+    # Note: cover.py was written expecting "api_client", "entry_title", "hub_serial".
+    # Using "client" here as per prompt, which means cover.py might need an update or this key should be "api_client".
+    # For now, following prompt to use "client".
+    platform_setup_data = {
+        "client": api_client, 
+        "hub_device_info": hub_device_info, # For the main Zeptrion Air device/hub
         "blind_channels": blind_channel_ids,
-        "entry_title": hub_name,
-        "hub_serial": serial_number,
-        "integration": async_get_loaded_integration(hass, entry.domain) # For ZeptrionAirData
+        "entry_title": hub_name, # Name of the hub entry (derived from entry.title or hostname)
+        "hub_serial": serial_number, # Unique ID of the hub
+        "coordinator": coordinator # Platforms might need the coordinator instance
     }
-
-    # Assign to entry.runtime_data before coordinator instantiation
-    # The coordinator will access client and integration via entry.runtime_data
-    entry.runtime_data = ZeptrionAirData(**hub_data) # Pass all hub_data to ZeptrionAirData constructor
-
-    # Store common data for platforms (can still be useful for direct access in platform setup)
-    # Platforms will access hass.data[DOMAIN][entry.entry_id].client etc.
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry.runtime_data 
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = platform_setup_data
     
-    # Setup coordinator
-    # The coordinator's constructor should be able to pick up entry.runtime_data if it needs it,
-    # or it's passed implicitly via hass object which can access entry.
-    # Based on the prompt, it should be `ZeptrionAirDataUpdateCoordinator(hass=hass)`
-    # The ZeptrionAirDataUpdateCoordinator's __init__ needs to be checked if it expects client via its constructor
-    # or if it retrieves it from entry.runtime_data.
-    # The original code passed `client=api_client`. If the coordinator's __init__ is:
-    # `def __init__(self, hass: HomeAssistant, client: ZeptrionAirApiClient)`
-    # then it needs the client.
-    # If its __init__ is `def __init__(self, hass: HomeAssistant, entry: ConfigEntry)`
-    # then it can get it from `entry.runtime_data.client`.
-    # The prompt states: "The coordinator should now pick up the client from entry.runtime_data.client"
-    # This implies the coordinator's constructor might not need `client` directly.
-    # Let's assume ZeptrionAirDataUpdateCoordinator is updated to fetch client from entry.runtime_data if not provided.
-    # Or, more directly, the coordinator is now part of ZeptrionAirData.
-    
-    # The original code in this file (before current changes) was:
-    # coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
-    # entry.runtime_data = ZeptrionAirData(client=api_client, integration=..., coordinator=coordinator)
-    # This structure means ZeptrionAirData holds the coordinator.
-    # Let's adjust to match the new structure where entry.runtime_data IS ZeptrionAirData.
-
-    # Create the coordinator instance. It will be stored within entry.runtime_data (ZeptrionAirData instance)
-    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass) # Removed client=api_client
-    entry.runtime_data.coordinator = coordinator # Store coordinator in ZeptrionAirData
-
-    await coordinator.async_config_entry_first_refresh() # This fetches /zrap/id again
+    # Refresh coordinator data.
+    # The coordinator's _async_update_data method should use entry.runtime_data.client
+    await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, ZEPTRION_PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
