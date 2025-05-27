@@ -57,13 +57,25 @@ async def async_setup_entry(
         return
 
     new_entities = []
+
+    # 1. Define the category to panel type mapping
+    panel_type_mapping = {
+        5: "Blinds", # Rollladen
+        6: "Markise" # Markise/Awning
+        # Add other mappings here if other cat values are used for covers in the future
+    }
+
     if identified_channels_list:
         for channel_info_dict in identified_channels_list:
             channel_id = channel_info_dict.get('id')
             channel_cat = channel_info_dict.get('cat')
-            # Use provided name, fallback to "Channel <id>"
-            channel_name = channel_info_dict.get('name', f"Channel {channel_id}")
-            # channel_icon = channel_info_dict.get('icon') # Extracted, can be used later if needed
+            # The 'name' from channel_info_dict is already a coalesced value (group or name)
+            # channel_name = channel_info_dict.get('name', f"Channel {channel_id}") 
+            
+            # 1. Extract detailed name components
+            api_group = channel_info_dict.get('api_group')
+            api_name = channel_info_dict.get('api_name')
+            # channel_icon = channel_info_dict.get('icon') # Available if needed
 
             if channel_id is None or channel_cat is None:
                 _LOGGER.warning(f"cover.py: Skipping channel due to missing id or cat: {channel_info_dict}")
@@ -71,18 +83,34 @@ async def async_setup_entry(
 
             # Conditional entity creation based on category
             if channel_cat == 5 or channel_cat == 6: # Blind (5) or Markise/Awning (6)
-                _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}, Name: '{channel_name}'). Type is cover. Creating entity.")
+                # Construct the entity name using the new logic
+                # hub_entry_title is typically the device ID like "zapp-123456" or a user-set title
+                
+                constructed_name: str
+                if api_group and api_group.strip(): # Check if api_group is not None and not empty/whitespace
+                    if api_name and api_name.strip(): # Check if api_name is not None and not empty/whitespace
+                        constructed_name = f"{hub_entry_title} {api_group} - {api_name}"
+                    else:
+                        constructed_name = f"{hub_entry_title} {api_group}"
+                elif api_name and api_name.strip(): # api_group is None or empty, but api_name exists
+                    constructed_name = f"{hub_entry_title} {api_name}"
+                else: # Fallback if neither api_group nor api_name is useful
+                    constructed_name = f"{hub_entry_title} Channel {channel_id}"
+
+                _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}, API Group: '{api_group}', API Name: '{api_name}'). Type is cover. Constructed Name: '{constructed_name}'. Creating entity.")
                 
                 blind_device_info = {
                     "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
-                    # Updated entity naming
-                    "name": f"{hub_entry_title} {channel_name}", 
+                    "name": constructed_name, # Use the newly constructed name
                     "via_device": (DOMAIN, hub_serial_for_blinds), 
                     "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
-                    "model": f"Zeptrion Air Channel - Cat {channel_cat}", 
+                    # "model": f"Zeptrion Air Channel - Cat {channel_cat}", # Old model string
                     "sw_version": main_hub_device_info.get("sw_version"),
                     # "suggested_area": channel_name if it's a room name, could be explored
                 }
+                # 2. Update model string construction
+                panel_type_string = panel_type_mapping.get(channel_cat, "Unknown Panel")
+                blind_device_info["model"] = f"Zeptrion Air Channel {channel_id} - {panel_type_string}"
 
                 new_entities.append(
                     ZeptrionAirBlind(
@@ -121,8 +149,8 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_device_info = device_info_for_blind_entity
         # The name of the entity itself (e.g., "Living Room Zeptrion Blind Ch1")
         self._attr_name = device_info_for_blind_entity["name"] 
-        # The unique_id for the entity (e.g., "SERIAL_ch1_cover")
-        self._attr_unique_id = f"{hub_serial}_ch{self._channel_id}_cover"
+        # The unique_id for the entity, using entry_title (hub's name) and channel_id
+        self._attr_unique_id = f"{entry_title}-ch{self._channel_id}"
 
 
         self._attr_is_closed: bool | None = None  # Position is unknown

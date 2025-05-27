@@ -94,10 +94,10 @@ async def async_setup_entry(
         "manufacturer": "Feller AG", # Manufacturer is fixed
         "model": model,
         "connections": {(device_registry.CONNECTION_UPNP, hostname)}, # For linking via network
-        # "sw_version" is intentionally omitted.
+        "sw_version": zrap_id_data.get('sw'),
     }
     
-    LOGGER.debug(f"Constructed hub_device_info for {serial_number} (sw_version omitted for testing): {hub_device_info}")
+    LOGGER.debug(f"Constructed hub_device_info for {serial_number}: {hub_device_info}")
 
     # Register the hub device in HA Device Registry
     # This replaces the later device_registry call using coordinator data if coordinator is not primary source for this.
@@ -163,7 +163,9 @@ async def async_setup_entry(
             "id": channel_id_int,
             "cat": cat_int,
             "name": channel_name, # This is the 'friendly_name' or 'name'
-            "icon": icon
+            "icon": icon,
+            "api_group": friendly_name, # friendly_name is channel_data.get('group')
+            "api_name": name,           # name is channel_data.get('name')
             # device_type will be added below based on cat_int
         }
 
