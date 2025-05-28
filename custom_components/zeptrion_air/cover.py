@@ -141,21 +141,30 @@ class ZeptrionAirBlind(CoverEntity):
         """Initialize the Zeptrion Air blind."""
         self._api_client = api_client
         self._channel_id = channel_id
+        self._attr_has_entity_name = True # Set as per requirement
         
         self._attr_device_info = device_info_for_blind_entity
         # The name of the entity itself (e.g., "Living Room Zeptrion Blind Ch1")
+        # This is the "entity name" part if _attr_has_entity_name is True.
+        # The device name comes from hub_device_info["name"] via async_setup_entry.
         self._attr_name = device_info_for_blind_entity["name"] 
         
         # The unique_id for the entity, using entry_title (hub's name) and channel_id
         self._attr_unique_id = f"{entry_title}-ch{self._channel_id}"
-        _LOGGER.debug("ZeptrionAirBlind cover entity initialized with Unique ID: %s, Name: %s", self.unique_id, self.name)
-
+        
         # Construct and set the object_id
         slugified_hub_name = slugify(entry_title)
         desired_object_id = f"{slugified_hub_name}_ch{self._channel_id}"
         self._attr_object_id = desired_object_id
-        _LOGGER.debug("ZeptrionAirBlind cover entity: setting object_id to: %s", self._attr_object_id)
-
+        
+        # Detailed debug log after all relevant attributes are set
+        _LOGGER.debug(
+            "ZeptrionAirBlind init: Name='%s', UniqueID='%s', AttrObjectID='%s', PropertyObjectID='%s'",
+            self._attr_name,
+            self._attr_unique_id,
+            self._attr_object_id,
+            self.object_id  # This calls the object_id property
+        )
 
         self._attr_is_closed: bool | None = None  # Position is unknown
         self._attr_is_opening: bool = False
