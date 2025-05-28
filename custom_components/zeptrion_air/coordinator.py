@@ -37,10 +37,10 @@ class ZeptrionAirDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(minutes=1),
         )
 
-    async def _async_update_data(self) -> Any:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library."""
         try:
-            data = await self.config_entry.runtime_data.client.async_get_device_identification()
+            data: dict[str, Any] = await self.config_entry.runtime_data.client.async_get_device_identification()
             LOGGER.info("Coordinator: _async_update_data: %s", data)
             return data
         except ZeptrionAirApiClientError as exception:

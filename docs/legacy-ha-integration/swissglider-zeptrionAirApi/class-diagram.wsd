@@ -1,0 +1,165 @@
+@startuml zeptrion_air_api
+class Hub {
+    +loop
+    +button_action_listen_handler
+    -Array[] _found_new_panels
+    -_zero_conf_listener
+    -Array[] _panels
+
+    +__init__(loop, found_new_panels)
+    +<<property>>all_panels()
+    +start_searching_new_devices()
+    +stop_searching_new_defices()
+    +register_for_new_found_panels()
+    +found_new_devices()
+    +get_new_panel()
+    +<<async>> close()
+}
+Hub *-- ButtonActionListenerHandler : button_action_listen_handler >
+Hub *-- ZeroConfListener : _zero_conf_listener >
+Hub o-- Panel : _found_new_panels 0..* >
+Hub *-- Panel : _panels 0..* >
+
+class Button {
+    -Bool _is_smt_btn
+    -_panel
+    -Dict[] _info
+    -_last_update_info
+    -_status_update_callback
+
+    +__init__(panel, info, is_smart_button=False)
+    +<<property>> panel_url()
+    +<<property>> uniq_id()
+    +<<property>> id()
+    +<<property>> name()
+    +<<property>> group()
+    +<<property>> icon()
+    +<<property>> type()
+    +<<property>> cat()
+    +<<property>> panel()
+    +<<property>> is_smart()
+    +change_info_configuration(name, group)
+    -_control(payload)
+    -_update()
+    +listen_to(callback)
+    +status_update_listener(info)
+}
+Button ..> Panel : _panel >
+
+class BlindButton{
+    -_blind_position
+    +move_up_blind()
+    +move_down_blind()
+    +stop_blind()
+    +tilt_up_blind()
+    +tilt_down_blind()
+    +blind_is_stoped()
+    +go_to_position(position)
+}
+Button <|-- BlindButton
+
+class LightButton{
+    +turn_on_light()
+    +turn_off_light()
+    +toggle_light()
+}
+Button <|-- LightButton
+
+class SmartButton{
+    -_storage
+    -_get_stored_info(panel)
+    +reset_btn_configuration(panel=None)
+}
+Button <|-- SmartButton
+
+class ButtonActionListenerHandler<<button_action_listener>>{
+    +loop
+    +Array[] button_action_listener
+    +Bool to_finish
+    +Bool finished
+    +__init__(loop)
+    +<<async>> init()
+    +<<async>> close()
+    +register_new_listener(panel, button_pressed_handler)
+}
+ButtonActionListenerHandler o-- ButtonActionListener : button_action_listener 0..* >
+
+class ButtonActionListener<<button_action_listener>>{
+    -_ip
+    +port
+    +websocket
+    +__init__(panel)
+    +<<async>> message_hanlder(message_handler)
+    +<<async>> get_press_info(new_message, status_time)
+    +close()
+    +<<property>> ip()
+}
+class PressInfo<<button_action_listener>>{
+    -_ip
+    -_port
+    +type
+    +channel
+    +button_nr
+    +value
+    +status_update_time
+    +__init__(value_msg=None, status_msg1=None,status_msg2=None, status_msg3=None)
+    +<<property>> ip()
+    +<<property>> port()
+}
+class Message<<button_action_listener>>{
+    +message
+    -_ip
+    -_port
+    +status_time
+    +channel
+    +button_nr
+    +__init__(message, ip, port, status_time)
+    +<<property>> ip()
+    +<<property>> port()
+    +<<property>> eid()
+    +<<property>> bta()
+    +<<property>> value()
+}
+
+class Panel{
+    -_name
+    -_ip
+    -_port
+    -_url
+    -Array[]_buttons
+    -Bool _is_smart_panel
+    -_storage_place
+    +loop
+    +button_action_listen_handler
+    +Bool is_listening_for_status_update
+    +__init__(name, ip, port, loop, button_action_listen_handler)
+    +<<property>> name()
+    +<<property>> ip()
+    +<<property>> port()
+    +<<property>> is_smart_panel()
+    +<<property>> url()
+    +<<property>> all_buttons()
+    +get_device_rssi()
+    -_read_smart_panel_info()
+    -_read_button()
+    -_set_new_button(channel_id, button)
+    +get_button(number)
+    -_start_listen_to_button_pressed()
+    -button_pressed_listener(info)
+}
+Panel *-- Button : _buttons 8 >
+Panel *-- ButtonActionListenerHandler : button_action_listen_handler >
+
+class ZeroConfListener{
+    -_add_service_handler
+    -_zeroconf
+    -_browser
+    -_service_type
+    +__init__(add_service_handler)
+    +start_searching()
+    +stop_searching()
+    +<<staticmethod>> is_a_zapp_device(name)
+    +remove_service(zeroconf, _type, name)
+    +add_service(zeroconf, _type, name)
+}
+@enduml

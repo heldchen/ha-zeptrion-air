@@ -1,0 +1,150 @@
+homeassistant:
+  # Name of the location where Home Assistant is running
+  name: Home
+  # Customization file
+  customize: !include customize.yaml
+
+# Show links to resources in log and frontend
+#introduction:
+
+# Enables the frontend
+frontend:
+
+# Enables configuration UI
+config:
+
+http:
+  # Secrets are defined in the file secrets.yaml
+  # api_password: !secret http_password
+  # Uncomment this if you are using SSL/TLS, running in Docker container, etc.
+  # base_url: example.duckdns.org:8123
+
+# Checks for available updates
+# Note: This component will send some information about your system to
+# the developers to assist with development of Home Assistant.
+# For more information, please see:
+# https://home-assistant.io/blog/2016/10/25/explaining-the-updater/
+updater:
+  # Optional, allows Home Assistant developers to focus on popular components.
+  # include_used_components: true
+
+# Discover some devices automatically
+#discovery:
+
+# Allows you to issue voice commands from the frontend in enabled browsers
+conversation:
+
+# Enables support for tracking state changes over time
+history:
+
+# View all events in a logbook
+logbook:
+
+# Enables a map showing the location of tracked devices
+map:
+
+# Track the sun
+sun:
+
+# Weather prediction
+sensor:
+  - platform: yr
+
+# Text to speech
+tts:
+  - platform: google
+
+# Cloud
+cloud:
+
+group: !include groups.yaml
+automation: !include automations.yaml
+script: !include scripts.yaml
+
+# logger:
+#   default: warning
+#   logs:
+#     homeassistant.components.hello_world: debug
+
+hello_world:
+  text: 'Hello, World! - and Swissglider'
+
+hello_service:
+
+light:
+    - platform: zeptrion_hue_lights
+      mappings:
+        # Name: [zeptrion_entity_name, hue_entity_name, group_name]
+        "Licht Küche": [light.kueche_kueche_2, light.kueche_kueche, 'Kueche']
+        "Licht Stube": [light.stube_stube_2, light.stube_stube, 'Stube']
+      scan_interval: 1
+
+zeptrionairhub:
+
+python_script:
+
+hue:
+
+# Pattern elements group / splitt name / name
+sg_renamer:
+    - platform_name: hue
+      domain: 
+        light
+    - platform_name: zeptrionairhub
+      domain: 
+        light
+        cover
+    - platform_name: zeptrion_hue_lights
+      domain: 
+        light
+
+
+# musst: name / opt: group, donain_filter, platform_filter, group_filter
+sg_panel:
+  - name: Hello World
+    domain_filter:
+      hello_world
+  - name: All Lights
+    domain_filter:
+      light
+  - name: All Lights + Covers
+    domain_filter:
+      light
+      cover
+  - name: All Covers
+    domain_filter:
+      cover
+  - name: Hue Lights
+    platform_filter:
+      hue
+  - name: Zeptrion Devices
+    platform_filter:
+      zeptrionairhub
+  - name: Zeptrion Lights Stube
+    domain_filter:
+      light
+    platform_filter:
+      zeptrionairhub
+    group_filter:
+      Stube
+  - name: 1. Stock
+    domain_filter:
+      light
+      cover
+      switch
+      sensor
+    group_filter:
+      Stube
+      Garderobe
+      Esszimmer
+      Kueche
+  - name: Zeptrion Hue Group
+    platform_filter:
+      zeptrion_hue_lights
+
+panel_custom:
+  - name: hello
+    sidebar_title: Hello World
+    sidebar_icon: mdi:hand-pointing-right
+    url_path: hello
+
