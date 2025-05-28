@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.components.button import ButtonEntity # Add this import
+from homeassistant.components.button import ButtonEntity 
+from homeassistant.util import slugify # Add this import
 
 if TYPE_CHECKING:
     # Import your data coordinator and API client if they are typed in hass.data
@@ -101,8 +102,8 @@ async def async_setup_entry(
                         action_type=action_def["type"],
                         action_label=action_def["label"],
                         service_to_call=action_def["service"],
-                        icon=action_def["icon"],
-                        parent_cover_unique_id=parent_cover_unique_id 
+                        icon=action_def["icon"]
+                        # parent_cover_unique_id is removed
                     )
                 )
         else:
@@ -131,8 +132,8 @@ class ZeptrionAirActionButton(ButtonEntity):
         action_type: str, # e.g., "short_up", "recall_s1"
         action_label: str, # e.g., "Short Up", "Scene S1"
         service_to_call: str, # e.g., SERVICE_BLIND_UP_STEP
-        icon: str, # mdi icon string
-        parent_cover_unique_id: str # The unique_id of the parent cover entity, e.g. "{hub_entry_title}-ch{channel_id}"
+        icon: str # mdi icon string
+        # parent_cover_unique_id: str, # Removed from signature
     ) -> None:
         """Initialize the Zeptrion Air action button."""
         self.hass = hass
@@ -141,34 +142,33 @@ class ZeptrionAirActionButton(ButtonEntity):
         self._action_type = action_type
         self._service_to_call = service_to_call
         
-        # Construct the entity_id of the parent cover.
-        # This assumes HA's default slugification (lowercase, hyphen to underscore).
-        # parent_cover_unique_id is like "zapp-123456-ch1"
-        # Entity ID would be like "cover.zapp_123456_ch1"
-        slugified_parent_unique_id = parent_cover_unique_id.replace('-', '_').lower()
-        self._parent_cover_entity_id = f"cover.{slugified_parent_unique_id}"
+        # Construct the entity_id of the parent cover based on object_id logic
+        slugified_hub_name = slugify(self._hub_entry_title)
+        target_object_id = f"{slugified_hub_name}_ch{self._channel_id}"
+        self._parent_cover_entity_id = f"cover.{target_object_id}"
         
         # Set attributes before logging them
         self._attr_name = f"{parent_device_name} {action_label}"
         self._attr_unique_id = f"{self._hub_entry_title}_ch{self._channel_id}_{self._action_type}_button"
         self._attr_icon = icon
 
-        # Enhanced logging as per plan
+        # Updated logging
         _LOGGER.debug(
             "Button __init__ for action '%s' on channel %s for hub '%s':",
             self._action_type,
             self._channel_id,
-            self._hub_entry_title 
+            self._hub_entry_title
         )
         _LOGGER.debug(
             "  Parent device name: '%s', Action label: '%s'",
             parent_device_name, action_label
         )
+        # _LOGGER.debug( # Removed as parent_cover_unique_id is no longer a parameter
+        #     "  Received parent_cover_unique_id: '%s'", parent_cover_unique_id 
+        # )
         _LOGGER.debug(
-            "  Received parent_cover_unique_id: '%s'", parent_cover_unique_id
-        )
-        _LOGGER.debug(
-            "  Constructed _parent_cover_entity_id (target for service call): '%s'", self._parent_cover_entity_id
+            "  Constructed _parent_cover_entity_id (target for service call): '%s' (from hub_entry_title: '%s', channel_id: %s)",
+            self._parent_cover_entity_id, self._hub_entry_title, self._channel_id
         )
         _LOGGER.debug(
             "  Button's own _attr_name set to: '%s'", self._attr_name 
