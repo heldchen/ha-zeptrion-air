@@ -159,11 +159,11 @@ class ZeptrionAirBlind(CoverEntity):
         
         # Detailed debug log after all relevant attributes are set
         _LOGGER.debug(
-            "ZeptrionAirBlind init: Name='%s', UniqueID='%s', AttrObjectID='%s', PropertyObjectID='%s'",
+            "ZeptrionAirBlind init: Name='%s', UniqueID='%s', AttrObjectID='%s'",
             self._attr_name,
             self._attr_unique_id,
-            self._attr_object_id,
-            self.object_id  # This calls the object_id property
+            self._attr_object_id
+            # self.object_id removed to prevent AttributeError during init
         )
 
         self._attr_is_closed: bool | None = None  # Position is unknown
