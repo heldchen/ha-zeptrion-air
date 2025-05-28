@@ -82,15 +82,34 @@ async def async_setup_entry(
                 continue
             
             # Get the entity_base_name from channel_info_dict (provided by __init__.py)
+            # This entity_base_name is the full device name like "HubName Room - Light"
             entity_base_name = channel_info_dict.get("entity_base_name")
             # Fallback if entity_base_name is not found, though it should always be there
-            desired_name = entity_base_name if entity_base_name else f"{hub_entry_title} Channel {channel_id}"
+            device_display_name = entity_base_name if entity_base_name else f"{hub_entry_title} Channel {channel_id}"
 
-            _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}). Type is cover. Using Name: '{desired_name}'. Creating entity.")
+            # Construct entity_specific_name from api_group and api_name
+            api_group = channel_info_dict.get('api_group')
+            api_name = channel_info_dict.get('api_name')
+            entity_specific_name: str
+            if api_group and api_group.strip():
+                stripped_api_group = api_group.strip()
+                if api_name and api_name.strip():
+                    entity_specific_name = f"{stripped_api_group} - {api_name.strip()}"
+                else:
+                    entity_specific_name = stripped_api_group
+            elif api_name and api_name.strip():
+                entity_specific_name = api_name.strip()
+            else:
+                entity_specific_name = f"Channel {channel_id}"
+            
+            _LOGGER.debug(
+                f"cover.py: Channel {channel_id} (Cat: {channel_cat}). Type is cover. "
+                f"Device Display Name: '{device_display_name}'. Entity Specific Name: '{entity_specific_name}'. Creating entity."
+            )
             
             blind_device_info = {
                 "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
-                "name": desired_name, # Use the name from entity_base_name
+                "name": device_display_name, # This is the device's name
                 "via_device": (DOMAIN, hub_serial_for_blinds), 
                 "manufacturer": main_hub_device_info.get("manufacturer", "Feller AG"),
                 "sw_version": main_hub_device_info.get("sw_version"),
@@ -101,13 +120,14 @@ async def async_setup_entry(
 
             new_entities.append(
                 ZeptrionAirBlind(
-                        api_client=api_client,
-                        device_info_for_blind_entity=blind_device_info,
-                        channel_id=channel_id,
-                        hub_serial=hub_serial_for_blinds, 
-                        entry_title=hub_entry_title # Hub's name/title for context, used for unique_id
-                    )
+                    api_client=api_client,
+                    device_info_for_blind_entity=blind_device_info, # This sets the device name
+                    channel_id=channel_id,
+                    hub_serial=hub_serial_for_blinds,
+                    entry_title=hub_entry_title, # Used for unique_id and object_id construction
+                    entity_specific_name=entity_specific_name # New argument for the entity's own name part
                 )
+            )
             # No explicit else needed here because the initial `if` condition
             # `device_type != "cover"` already handles non-cover channels.
     
@@ -137,17 +157,15 @@ class ZeptrionAirBlind(CoverEntity):
         channel_id: int,
         hub_serial: str, # Serial number of the parent hub
         entry_title: str, # Name/title of the parent hub (e.g. "Living Room Zeptrion")
+        entity_specific_name: str # New argument for the entity's own name part
     ) -> None:
         """Initialize the Zeptrion Air blind."""
         self._api_client = api_client
         self._channel_id = channel_id
-        self._attr_has_entity_name = True # Set as per requirement
+        self._attr_has_entity_name = True # Ensure this is true
         
-        self._attr_device_info = device_info_for_blind_entity
-        # The name of the entity itself (e.g., "Living Room Zeptrion Blind Ch1")
-        # This is the "entity name" part if _attr_has_entity_name is True.
-        # The device name comes from hub_device_info["name"] via async_setup_entry.
-        self._attr_name = device_info_for_blind_entity["name"] 
+        self._attr_device_info = device_info_for_blind_entity # Device name is here
+        self._attr_name = entity_specific_name # Entity-specific part of the name
         
         # The unique_id for the entity, using entry_title (hub's name) and channel_id
         self._attr_unique_id = f"{entry_title}-ch{self._channel_id}"
