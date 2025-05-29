@@ -195,8 +195,8 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity, # Ensure SensorEntity is explicitly available
     SensorStateClass, # For explicit state class setting
-    UnitOfSignalStrength,
 )
+from homeassistant.const import UnitOfSignalStrength # Moved import
 # DeviceInfo is already imported.
 # DOMAIN is already imported.
 # _LOGGER is already defined.
