@@ -1,0 +1,47 @@
+blind_up_step:
+  name: Blind Up Step
+  description: Moves the blind up for a short duration.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
+
+blind_down_step:
+  name: Blind Down Step
+  description: Moves the blind down for a short duration.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
+
+blind_recall_s1:
+  name: Blind Recall S1
+  description: Recalls scene S1 for the blind.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
+
+blind_recall_s2:
+  name: Blind Recall S2
+  description: Recalls scene S2 for the blind.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
+
+blind_recall_s3:
+  name: Blind Recall S3
+  description: Recalls scene S3 for the blind.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
+
+blind_recall_s4:
+  name: Blind Recall S4
+  description: Recalls scene S4 for the blind.
+  target:
+    entity:
+      integration: zeptrion_air
+      domain: cover
