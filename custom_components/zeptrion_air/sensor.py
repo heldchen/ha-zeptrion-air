@@ -190,7 +190,7 @@ class ZeptrionAirChannelSensor(SensorEntity):
     #         )
 
 # --- Additions for ZeptrionAirRssiSensor ---
-from ..coordinator import ZeptrionAirDataUpdateCoordinator
+from .coordinator import ZeptrionAirDataUpdateCoordinator
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity, # Ensure SensorEntity is explicitly available
@@ -201,7 +201,7 @@ from homeassistant.components.sensor import (
 # DOMAIN is already imported.
 # _LOGGER is already defined.
 
-from ..entity import ZeptrionAirEntity # Ensure this import is present
+from .entity import ZeptrionAirEntity # Ensure this import is present
 
 class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
