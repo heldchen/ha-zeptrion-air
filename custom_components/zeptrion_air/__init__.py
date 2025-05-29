@@ -94,8 +94,10 @@ async def async_setup_entry(
         
     if entry.unique_id and entry.unique_id != serial_number:
         LOGGER.warning(
-            f"Config entry unique ID {entry.unique_id} does not match device serial number {serial_number}. "
-            f"Using serial number from API ({serial_number}) for device identification."
+            f"Config entry's unique ID ('{entry.unique_id}') does not match the device's current serial "
+            f"number ('{serial_number}') obtained from the API. The integration will use the API-provided "
+            f"serial number ('{serial_number}') for device registration and identification. This might "
+            f"occur if the device hardware was changed or for older configurations."
         )
 
     model: str = zrap_id_data.get('type', 'Zeptrion Air Device')
