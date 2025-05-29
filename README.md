@@ -28,6 +28,10 @@ This is a custom integration for Home Assistant that allows you to control [Zept
 *   **No Position Feedback for Covers:** The Zeptrion Air API does not provide real-time position feedback for blinds/covers. Therefore, the Home Assistant cover entities will not display the current position (e.g., 50% open). Status updates are optimistic based on commands sent.
 *   **Sensors are Static:** The sensor entities for channel name, group, and icon ID are populated once during setup and do not update dynamically if changed on the Zeptrion device itself (though these are typically static).
 
+## Installation
+
+[Add repository to HACS](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=ha-zeptrion-air-integration&owner=alternize)
+
 ## Technical Details: API Usage
 
 This integration interacts with the Zeptrion Air hub's local REST API using the following endpoints:
