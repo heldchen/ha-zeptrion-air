@@ -51,6 +51,60 @@ class ZeptrionAirApiClient:
             path="/zrap/id",
         )
 
+    async def async_get_rssi(self) -> int | None:
+        """Fetch and parse the RSSI value from the device."""
+        try:
+            response_data = await self._api_xml_wrapper(
+                method="get",
+                path="/zrap/rssi",
+            )
+            # Expected structure from xmltodict: {'rssi': {'dbm': '-62'}}
+            if response_data and 'rssi' in response_data and \
+               isinstance(response_data['rssi'], dict) and \
+               'dbm' in response_data['rssi']:
+                dbm_value_str = response_data['rssi']['dbm']
+                if dbm_value_str is None: # Handle cases where dbm tag might be empty e.g. <dbm/>
+                    _LOGGER.error(
+                        "RSSI 'dbm' tag was empty in response from %s. Response: %s",
+                        self._hostname,
+                        response_data,
+                    )
+                    return None
+                return int(dbm_value_str)
+            else:
+                _LOGGER.error(
+                    "Unexpected structure for RSSI data from %s. Missing 'rssi' or 'dbm' key. Response: %s",
+                    self._hostname,
+                    response_data,
+                )
+                return None
+        except (ValueError, TypeError) as e: # ValueError for int(), TypeError for None access
+            _LOGGER.error(
+                "Failed to parse RSSI value from %s: %s. Response data: %s",
+                self._hostname,
+                e,
+                response_data, # type: ignore # response_data might be unbound if _api_xml_wrapper failed early
+            )
+            return None
+        except ZeptrionAirApiClientCommunicationError as e:
+            # Logged by _api_xml_wrapper, re-raise or handle if needed differently here
+            _LOGGER.debug("Communication error fetching RSSI for %s: %s (already logged by wrapper)", self._hostname, e)
+            raise # Re-raise to be handled by the caller (e.g. coordinator)
+        except ZeptrionAirApiClientError as e:
+            _LOGGER.error("Generic API client error fetching RSSI for %s: %s", self._hostname, e)
+            # Depending on desired behavior, could return None or re-raise
+            return None # Or raise, if the coordinator should handle this as a critical failure
+        except Exception as e: # Catch any other unexpected errors during parsing
+            _LOGGER.error(
+                "Unexpected error fetching or parsing RSSI from %s: %s. Response data: %s",
+                self._hostname,
+                e,
+                response_data, # type: ignore
+                exc_info=True # Include stack trace for unexpected errors
+            )
+            return None
+
+
     async def _api_json_wrapper(
         self,
         method: str,

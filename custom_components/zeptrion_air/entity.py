@@ -18,14 +18,19 @@ class ZeptrionAirEntity(CoordinatorEntity[ZeptrionAirDataUpdateCoordinator]):
         """Initialize."""
         super().__init__(coordinator)
         self._attr_unique_id = coordinator.config_entry.entry_id
+
+        # Helper to safely access potentially nested data
+        hub_data = coordinator.data.get('id', {}) if coordinator.data else {}
+        
         self._attr_device_info = DeviceInfo(
             identifiers={
                 (
                     coordinator.config_entry.domain,
-                    coordinator.config_entry.entry_id,
+                    coordinator.config_entry.unique_id, # Corrected: use unique_id (serial number)
                 ),
             },
-            name=coordinator.config_entry.runtime_data.integration.name,
-            model=coordinator.config_entry.runtime_data.integration.version,
-            manufacturer=coordinator.config_entry.runtime_data.integration.name,
+            name=coordinator.config_entry.title, # Use the hub's name
+            model=hub_data.get('type'), # Get model from API data
+            sw_version=hub_data.get('sw'), # Get software version from API data
+            manufacturer="Feller AG", # Set manufacturer to "Feller AG"
         )

@@ -123,6 +123,28 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
         
         hostname: str = discovery_info.hostname[:-1] if discovery_info.hostname.endswith('.') else discovery_info.hostname
         
+        # Extract serial number from hostname
+        unique_id_to_set: str = hostname # Fallback to full hostname
+        try:
+            # Hostname format is typically "zapp-SERIALNUMBER.local"
+            # or just "zapp-SERIALNUMBER" if .local is already stripped (e.g. by discovery_info.name)
+            name_part = hostname.split(".")[0] # Get "zapp-SERIALNUMBER"
+            serial_from_hostname = name_part.split("-")[1] # Get "SERIALNUMBER"
+            if serial_from_hostname: # Ensure it's not empty
+                unique_id_to_set = serial_from_hostname
+            else:
+                LOGGER.warning(
+                    "Could not parse serial number from hostname part: '%s' (derived from '%s'). Falling back to full hostname.",
+                    name_part,
+                    hostname
+                )
+        except IndexError:
+            LOGGER.warning(
+                "Could not parse serial number from hostname: '%s' due to unexpected format. Falling back to full hostname.",
+                hostname,
+                exc_info=True # Add exception info for better debugging
+            )
+
         self.discovery_info = {
             CONF_NAME: discovery_info.name, 
             CONF_HOSTNAME: hostname, 
@@ -131,7 +153,7 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
             'properties': dict(discovery_info.properties) # Convert Mapping to dict
         }
         
-        await self.async_set_unique_id(hostname)
+        await self.async_set_unique_id(unique_id_to_set)
         self._abort_if_unique_id_configured(
             updates={
                 CONF_HOSTNAME: self.discovery_info[CONF_HOSTNAME],
