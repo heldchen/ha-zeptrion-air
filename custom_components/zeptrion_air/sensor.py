@@ -196,6 +196,7 @@ from homeassistant.components.sensor import (
     SensorEntity, # Ensure SensorEntity is explicitly available
     SensorStateClass, # For explicit state class setting
 )
+from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT # Added import
 # DeviceInfo is already imported.
 # DOMAIN is already imported.
 # _LOGGER is already defined.
@@ -206,7 +207,7 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
 
     _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
-    _attr_native_unit_of_measurement = "dBm"
+    _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
     _attr_state_class = SensorStateClass.MEASUREMENT # Explicitly "measurement" string resolves to this enum
     _attr_entity_registry_enabled_default = True
     # _attr_has_entity_name = False (or omitted) is correct when _attr_name is directly set.
