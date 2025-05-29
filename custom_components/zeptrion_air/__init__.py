@@ -44,7 +44,8 @@ async def async_setup_entry(
     api_client: ZeptrionAirApiClient = ZeptrionAirApiClient(hostname=hostname, session=async_get_clientsession(hass))
 
     # Initialize Coordinator and runtime_data earlier
-    coordinator: ZeptrionAirDataUpdateCoordinator = ZeptrionAirDataUpdateCoordinator(hass=hass)
+    # Pass the api_client directly to the coordinator
+    coordinator: ZeptrionAirDataUpdateCoordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
     integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
     
     entry.runtime_data = ZeptrionAirData(
@@ -52,31 +53,53 @@ async def async_setup_entry(
         coordinator=coordinator,
         integration=integration_obj
     )
+    coordinator.config_entry = entry
 
     try:
-        # First refresh will call coordinator._async_update_data, which gets device_id
-        await coordinator.async_config_entry_first_refresh() 
-        device_data_api: dict[str, Any] | None = coordinator.data # data from /zrap/id
+        # First refresh is no longer needed here, coordinator will fetch on its schedule
+        # We need to perform an initial data fetch to get device_id for setup
+        # This is a one-time fetch; subsequent updates are handled by the coordinator's schedule
+        device_data_api = await api_client.async_get_device_identification() # Use api_client directly for initial fetch
 
-        if not device_data_api: 
-            LOGGER.error(f"Failed to fetch initial device identification data via coordinator for {hostname}.")
+        if not device_data_api:
+            LOGGER.error(f"Failed to fetch initial device identification data for {hostname} using api_client.")
             entry.runtime_data = None # Clear runtime_data on failure
             return False
+
+        # Fetch initial RSSI - supplemental, non-critical for setup to proceed
+        rssi_value = None # Default to None
+        try:
+            rssi_value = await api_client.async_get_rssi()
+            LOGGER.debug(f"Successfully fetched initial RSSI for {hostname}: {rssi_value}")
+        except ZeptrionAirApiClientCommunicationError as e:
+            LOGGER.warning(f"Initial RSSI fetch failed (communication error) for {hostname}: {e}. Will rely on coordinator updates.")
+        except ZeptrionAirApiClientError as e:
+            LOGGER.warning(f"Initial RSSI fetch failed (API error) for {hostname}: {e}. Will rely on coordinator updates.")
+        except Exception as e:
+            LOGGER.error(f"Unexpected error during initial RSSI fetch for {hostname}: {e}. Will rely on coordinator updates.")
+        
+        # Add rssi_dbm to the device_data_api dictionary.
+        # device_data_api is confirmed to be a dictionary if we reached this point.
+        device_data_api['rssi_dbm'] = rssi_value
+        
+        # Store the initially fetched data (now including RSSI) in the coordinator
+        if coordinator.data is None:
+            coordinator.data = device_data_api.copy()
+            # Note: If coordinator.data could already exist and we want to update it,
+            # this simple assignment might not be enough. However, given the current flow,
+            # coordinator.data is typically None at this stage of initial setup.
 
         # Fetch channel descriptions directly, this is a one-off setup task
         channel_des_data: dict[str, Any] = await api_client.async_get_channel_descriptions()
         LOGGER.debug(f"Full /zrap/chdes response for {hostname}: {channel_des_data}")
 
     except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
-        # This will catch errors from api_client.async_get_channel_descriptions()
+        # This will catch errors from api_client.async_get_device_identification() or async_get_channel_descriptions()
         LOGGER.error(f"Failed to communicate with Zeptrion Air device {hostname} during setup: {e}")
         entry.runtime_data = None # Clear runtime_data on failure
         return False
-    except UpdateFailed as e: # Catch UpdateFailed from coordinator.async_config_entry_first_refresh()
-        LOGGER.error(f"Coordinator failed its first refresh for {hostname}: {e}")
-        entry.runtime_data = None # Clear runtime_data on failure
-        return False
-    except Exception as e: 
+    # UpdateFailed is no longer expected here from async_config_entry_first_refresh
+    except Exception as e:
         LOGGER.error(f"Unexpected error setting up Zeptrion Air device {hostname}: {e}")
         entry.runtime_data = None # Clear runtime_data on failure
         return False

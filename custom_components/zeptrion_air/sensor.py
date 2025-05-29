@@ -245,39 +245,26 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.data is None:
-            _LOGGER.debug(
-                "RSSI Sensor (%s): No data available from coordinator. Setting native_value to None.",
-                self.unique_id,
-            )
+            _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): Coordinator data is None.")
+            self._attr_native_value = None
+        elif 'rssi_dbm' not in self.coordinator.data:
+            _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): 'rssi_dbm' key not found in coordinator data. Current coordinator data: {self.coordinator.data}")
             self._attr_native_value = None
         else:
-            rssi_value = self.coordinator.data.get('rssi_dbm')
-            if isinstance(rssi_value, (int, float)): # Allow float, then cast to int
-                self._attr_native_value = int(rssi_value)
-            elif rssi_value is None:
+            rssi = self.coordinator.data['rssi_dbm']
+            if rssi is None:
+                _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): 'rssi_dbm' value is None in coordinator data.")
                 self._attr_native_value = None
-                _LOGGER.debug(
-                    "RSSI Sensor (%s): RSSI value is None in coordinator data. Setting native_value to None.",
-                    self.unique_id,
-                )
             else:
-                _LOGGER.warning(
-                    "RSSI Sensor (%s): Received non-numeric or unexpected value for rssi_dbm: %s (type: %s). Setting native_value to None.",
-                    self.unique_id,
-                    rssi_value,
-                    type(rssi_value).__name__,
-                )
-                self._attr_native_value = None
+                # Attempt to cast to int, as API might return string for numbers
+                try:
+                    self._attr_native_value = int(rssi)
+                    _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): Updated native_value to {self._attr_native_value}.")
+                except (ValueError, TypeError) as e:
+                    _LOGGER.warning(f"RSSI Sensor ({self.unique_id}): Could not parse RSSI value '{rssi}' as int: {e}")
+                    self._attr_native_value = None
         
-        # After updating the value, if the entity is part of HASS, request a state write.
-        # The CoordinatorEntity base class handles calling async_write_ha_state
-        # when _handle_coordinator_update is invoked due to a coordinator update.
-        # Explicitly calling it here is only truly necessary if this method
-        # were to be called outside of that managed flow (e.g. from __init__ directly
-        # AND hass is already available).
-        # For updates driven by the coordinator listener, the base class handles this.
-        # However, to ensure state is written if called from __init__ after HASS is ready:
-        if self.hass: # Check if HASS is available to the entity
+        if self.hass: # Check if HASS context is available for the entity
             self.async_write_ha_state()
 
-    # The `available` property is inherited from CoordinatorEntity (via placeholder ZeptrionAirEntity)
+    # The `available` property is inherited from CoordinatorEntity (via ZeptrionAirEntity)

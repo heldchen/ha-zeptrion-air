@@ -146,8 +146,9 @@ class ZeptrionAirActionButton(ButtonEntity):
         icon: str, 
     ) -> None:
         """Initialize the Zeptrion Air action button."""
-        self.config_entry: ConfigEntry = config_entry 
-        self._hub_entry_title: str = hub_entry_title 
+        self.config_entry: ConfigEntry = config_entry
+        self._hub_serial: str = hub_serial  # Store hub_serial
+        self._hub_entry_title: str = hub_entry_title # Keep for logging or other purposes if needed
         self._channel_id: int = channel_id
         self._action_type: str = action_type
         
@@ -155,12 +156,13 @@ class ZeptrionAirActionButton(ButtonEntity):
         self._attr_name: str = f"{parent_device_name} {action_label}"
         # Use a slugified action_label for unique_id to avoid issues with potentially long service names in action_type
         action_label_slug: str = action_label.lower().replace(' ', '_').replace('-', '_')
-        self._attr_unique_id: str = f"{self._hub_entry_title}_ch{self._channel_id}_{action_label_slug}_button"
+        # Use hub_serial for a stable unique ID
+        self._attr_unique_id: str = f"{self._hub_serial}_ch{self._channel_id}_{action_label_slug}_button"
         self._attr_icon: str = icon
 
         _LOGGER.debug(
-            "Button __init__ for action '%s' on channel %s for hub '%s':",
-            self._action_type, self._channel_id, self._hub_entry_title
+            "Button __init__ for action '%s' on channel %s for hub_serial '%s' (entry_title: '%s'):",
+            self._action_type, self._channel_id, self._hub_serial, self._hub_entry_title
         )
         _LOGGER.debug(
             "  Parent device name: '%s', Action label: '%s'", parent_device_name, action_label
