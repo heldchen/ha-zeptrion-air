@@ -201,23 +201,7 @@ from homeassistant.components.sensor import (
 # DOMAIN is already imported.
 # _LOGGER is already defined.
 
-# Placeholder for ZeptrionAirEntity if not present in ..entity
-try:
-    from ..entity import ZeptrionAirEntity
-except ImportError:
-    _LOGGER.info("ZeptrionAirEntity not found in ..entity. Using a placeholder CoordinatorEntity base.")
-    from homeassistant.helpers.update_coordinator import CoordinatorEntity
-    # Define a basic ZeptrionAirEntity that sets device_info
-    class ZeptrionAirEntity(CoordinatorEntity[ZeptrionAirDataUpdateCoordinator]): # type: ignore[no-redef, type-var]
-        """
-        Placeholder base class for Zeptrion Air entities.
-        Assumes the coordinator is passed and device_info is set.
-        The CoordinatorEntity base class handles listener registration
-        and calls self._handle_coordinator_update() on updates.
-        """
-        def __init__(self, coordinator: ZeptrionAirDataUpdateCoordinator, device_info: DeviceInfo):
-            super().__init__(coordinator)
-            self._attr_device_info = device_info
+from ..entity import ZeptrionAirEntity # Ensure this import is present
 
 class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
@@ -237,9 +221,10 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
         hub_name: str, # Used for a friendly name for the sensor
     ) -> None:
         """Initialize the RSSI sensor."""
-        # ZeptrionAirEntity's __init__ (or CoordinatorEntity's) is called.
-        # This sets up the coordinator and, via the placeholder, self._attr_device_info.
-        super().__init__(coordinator, hub_device_info)
+        # ZeptrionAirEntity's __init__ is called.
+        # It's expected to take only the coordinator.
+        # The base class ZeptrionAirEntity is responsible for setting _attr_device_info.
+        super().__init__(coordinator)
         
         self._attr_name = f"{hub_name} Wi-Fi Signal"
         self._attr_unique_id = f"{hub_serial}_rssi"
