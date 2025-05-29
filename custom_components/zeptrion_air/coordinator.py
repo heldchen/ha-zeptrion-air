@@ -38,10 +38,24 @@ class ZeptrionAirDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Update data via library."""
+        """Update data via library, including device identification and RSSI."""
         try:
+            # Fetch device identification data
             data: dict[str, Any] = await self.config_entry.runtime_data.client.async_get_device_identification()
-            LOGGER.info("Coordinator: _async_update_data: %s", data)
+            
+            # Fetch RSSI data
+            # async_get_rssi is expected to return int | None
+            # It will raise ZeptrionAirApiClientCommunicationError on communication issues,
+            # or return None on parsing issues/other non-communication API errors.
+            rssi_value: int | None = await self.config_entry.runtime_data.client.async_get_rssi()
+            
+            # Add RSSI to the data dictionary
+            # Storing None if RSSI could not be fetched/parsed, allows entities to handle it.
+            data['rssi_dbm'] = rssi_value
+            
+            LOGGER.info("Coordinator: _async_update_data (includes RSSI): %s", data)
             return data
         except ZeptrionAirApiClientError as exception:
-            raise UpdateFailed(exception) from exception
+            # This will catch errors from both async_get_device_identification and async_get_rssi
+            LOGGER.error("Coordinator: Error updating data: %s", exception)
+            raise UpdateFailed(f"Error communicating with API: {exception}") from exception

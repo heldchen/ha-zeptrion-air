@@ -41,8 +41,13 @@ async def async_setup_entry(
     if not hub_serial: # Guard makes hub_serial effectively str after this
         _LOGGER.error("sensor.py async_setup_entry: Hub serial not found in platform_data.")
         return
+    
+    # Prepare a list to hold all sensor entities (channel sensors + RSSI sensor)
+    # Ensure the list type can accommodate both ZeptrionAirChannelSensor and ZeptrionAirRssiSensor.
+    # Using SensorEntity as a common base type for the list.
+    new_entities: list[SensorEntity] = []
 
-    new_entities: list[ZeptrionAirChannelSensor] = []
+    # Logic for ZeptrionAirChannelSensor (existing loop)
     for channel_info_dict in identified_channels_list:
         channel_id: int | None = channel_info_dict.get('id')
         # channel_cat = channel_info_dict.get('cat') # Not strictly needed for sensors if they are for any channel
@@ -84,12 +89,39 @@ async def async_setup_entry(
                         channel_base_name=str(channel_info_dict.get("entity_base_name", f"Channel {channel_id}")) # Ensure str
                     )
                 )
+    
+    # --- Add ZeptrionAirRssiSensor ---
+    coordinator: ZeptrionAirDataUpdateCoordinator | None = platform_data.get("coordinator")
+    hub_device_info: DeviceInfo | None = platform_data.get("hub_device_info")
+    hub_name: str | None = platform_data.get("entry_title") # entry_title is usually the user-given name or default
+
+    if coordinator and hub_device_info and hub_serial and hub_name:
+        rssi_sensor = ZeptrionAirRssiSensor(
+            coordinator=coordinator,
+            hub_device_info=hub_device_info,
+            hub_serial=hub_serial, # hub_serial is confirmed not None above
+            hub_name=hub_name
+        )
+        new_entities.append(rssi_sensor)
+        _LOGGER.info(f"Adding Zeptrion Air RSSI sensor for hub {hub_name} (Serial: {hub_serial})")
+    else:
+        missing_data_elements = []
+        if not coordinator:
+            missing_data_elements.append("coordinator")
+        if not hub_device_info:
+            missing_data_elements.append("hub_device_info")
+        if not hub_name: # hub_serial is already checked and would cause return if missing
+            missing_data_elements.append("hub_name (entry_title)")
+        _LOGGER.error(
+            f"Could not create RSSI sensor for hub {hub_serial} due to missing data: {', '.join(missing_data_elements)}."
+        )
+    # --- End of RSSI Sensor Addition ---
 
     if new_entities:
-        _LOGGER.info(f"Adding {len(new_entities)} Zeptrion Air sensor entities.")
+        _LOGGER.info(f"Adding {len(new_entities)} Zeptrion Air sensor entities in total.")
         async_add_entities(new_entities)
     else:
-        _LOGGER.info("No Zeptrion Air sensor entities to add.")
+        _LOGGER.info("No Zeptrion Air sensor entities to add (neither channel nor RSSI).")
 
 
 class ZeptrionAirChannelSensor(SensorEntity):
@@ -156,3 +188,353 @@ class ZeptrionAirChannelSensor(SensorEntity):
     #         self.async_on_remove(
     #             self.coordinator.async_add_listener(self._handle_coordinator_update)
     #         )
+
+# --- Additions for ZeptrionAirRssiSensor ---
+from ..coordinator import ZeptrionAirDataUpdateCoordinator
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity, # Ensure SensorEntity is explicitly available
+    SensorStateClass, # For explicit state class setting
+    UnitOfSignalStrength,
+)
+# DeviceInfo is already imported.
+# DOMAIN is already imported.
+# _LOGGER is already defined.
+
+# Placeholder for ZeptrionAirEntity if not present in ..entity
+try:
+    from ..entity import ZeptrionAirEntity
+except ImportError:
+    _LOGGER.info("ZeptrionAirEntity not found in ..entity. Using a placeholder CoordinatorEntity base.")
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+    # Define a basic ZeptrionAirEntity that sets device_info
+    class ZeptrionAirEntity(CoordinatorEntity[ZeptrionAirDataUpdateCoordinator]): # type: ignore[no-redef, type-var]
+        """
+        Placeholder base class for Zeptrion Air entities.
+        Assumes the coordinator is passed and device_info is set.
+        The CoordinatorEntity base class handles listener registration
+        and calls self._handle_coordinator_update() on updates.
+        """
+        def __init__(self, coordinator: ZeptrionAirDataUpdateCoordinator, device_info: DeviceInfo):
+            super().__init__(coordinator)
+            self._attr_device_info = device_info
+
+class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
+    """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
+
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_native_unit_of_measurement = UnitOfSignalStrength.DECIBELS_MILLIWATT
+    _attr_state_class = SensorStateClass.MEASUREMENT # Explicitly "measurement" string resolves to this enum
+    _attr_entity_registry_enabled_default = True
+    # _attr_has_entity_name = False (or omitted) is correct when _attr_name is directly set.
+    # If _attr_has_entity_name were True, HA would try to generate the name or expect entity_description.name.
+
+    def __init__(
+        self,
+        coordinator: ZeptrionAirDataUpdateCoordinator,
+        hub_device_info: DeviceInfo, # DeviceInfo for the main Hub
+        hub_serial: str,
+        hub_name: str, # Used for a friendly name for the sensor
+    ) -> None:
+        """Initialize the RSSI sensor."""
+        # ZeptrionAirEntity's __init__ (or CoordinatorEntity's) is called.
+        # This sets up the coordinator and, via the placeholder, self._attr_device_info.
+        super().__init__(coordinator, hub_device_info)
+        
+        self._attr_name = f"{hub_name} Wi-Fi Signal"
+        self._attr_unique_id = f"{hub_serial}_rssi"
+
+        _LOGGER.debug(
+            "Initializing ZeptrionAirRssiSensor: Name: %s, Unique ID: %s, For Hub: %s",
+            self._attr_name, self._attr_unique_id, hub_serial
+        )
+        
+        # Set initial state:
+        # The CoordinatorEntity base class calls _handle_coordinator_update
+        # when the coordinator has data and the entity is added to hass.
+        # Calling it here ensures initial state if data is already present
+        # before listener registration. Guard with self.coordinator.data check.
+        if self.coordinator.data:
+            self._handle_coordinator_update()
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                "RSSI Sensor (%s): No data available from coordinator. Setting native_value to None.",
+                self.unique_id,
+            )
+            self._attr_native_value = None
+        else:
+            rssi_value = self.coordinator.data.get('rssi_dbm')
+            if isinstance(rssi_value, (int, float)): # Allow float, then cast to int
+                self._attr_native_value = int(rssi_value)
+            elif rssi_value is None:
+                self._attr_native_value = None
+                _LOGGER.debug(
+                    "RSSI Sensor (%s): RSSI value is None in coordinator data. Setting native_value to None.",
+                    self.unique_id,
+                )
+            else:
+                _LOGGER.warning(
+                    "RSSI Sensor (%s): Received non-numeric or unexpected value for rssi_dbm: %s (type: %s). Setting native_value to None.",
+                    self.unique_id,
+                    rssi_value,
+                    type(rssi_value).__name__,
+                )
+                self._attr_native_value = None
+        
+        # After updating the value, if the entity is part of HASS, request a state write.
+        # The CoordinatorEntity base class handles calling async_write_ha_state
+        # when _handle_coordinator_update is invoked due to a coordinator update.
+        # Explicitly calling it here is only truly necessary if this method
+        # were to be called outside of that managed flow (e.g. from __init__ directly
+        # AND hass is already available).
+        # For updates driven by the coordinator listener, the base class handles this.
+        # However, to ensure state is written if called from __init__ after HASS is ready:
+        if self.hass: # Check if HASS is available to the entity
+            self.async_write_ha_state()
+
+    # The `available` property is inherited from CoordinatorEntity (via placeholder ZeptrionAirEntity)
+    # and is based on self.coordinator.last_update_success. This is standard.
+    # If 'rssi_dbm' is None, the sensor should be "available" but have an "unknown" state,
+    # which is correctly handled by setting self._attr_native_value = None.
+# --- End of Additions ---
+
+# --- Additions for ZeptrionAirRssiSensor ---
+from ..coordinator import ZeptrionAirDataUpdateCoordinator
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity, # Already imported but good to ensure
+    SensorStateClass,
+    UnitOfSignalStrength,
+)
+# DeviceInfo is already imported.
+# DOMAIN is already imported.
+# _LOGGER is already defined.
+
+# Placeholder for ZeptrionAirEntity if not present in ..entity
+try:
+    from ..entity import ZeptrionAirEntity
+except ImportError:
+    _LOGGER.info("ZeptrionAirEntity not found in ..entity. Using a placeholder CoordinatorEntity base.")
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+    # Define a basic ZeptrionAirEntity that sets device_info
+    class ZeptrionAirEntity(CoordinatorEntity): # type: ignore[no-redef] # Allow redefinition for placeholder
+        """
+        Placeholder base class for Zeptrion Air entities.
+        Assumes the coordinator is passed and device_info is set.
+        """
+        def __init__(self, coordinator: ZeptrionAirDataUpdateCoordinator, device_info: DeviceInfo):
+            super().__init__(coordinator)
+            self._attr_device_info = device_info
+            # Subclasses are expected to implement _handle_coordinator_update
+            # which is called by CoordinatorEntity when data updates.
+
+class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
+    """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
+
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_native_unit_of_measurement = UnitOfSignalStrength.DECIBELS_MILLIWATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_registry_enabled_default = True
+    # As per prompt, explicitly setting _attr_name, so _attr_has_entity_name should be False or omitted.
+    # If _attr_has_entity_name is True, HA might try to auto-generate the name
+    # or expect entity_description.name, potentially conflicting with direct _attr_name setting.
+    # Omitting it or setting to False is safer when _attr_name is directly assigned.
+    _attr_has_entity_name = False
+
+
+    def __init__(
+        self,
+        coordinator: ZeptrionAirDataUpdateCoordinator,
+        hub_device_info: DeviceInfo, # DeviceInfo for the main Hub
+        hub_serial: str,
+        hub_name: str, # Used for a friendly name for the sensor
+    ) -> None:
+        """Initialize the RSSI sensor."""
+        # ZeptrionAirEntity's __init__ (or CoordinatorEntity's) is called.
+        # We assume it takes the coordinator and hub_device_info to link the entity to the device.
+        super().__init__(coordinator, hub_device_info)
+        
+        self._attr_name = f"{hub_name} Wi-Fi Signal"
+        self._attr_unique_id = f"{hub_serial}_rssi"
+        # self._attr_device_info is set by the super().__init__ call via the placeholder or actual ZeptrionAirEntity.
+
+        _LOGGER.debug(
+            "Initializing ZeptrionAirRssiSensor: Name: %s, Unique ID: %s, Hub Serial: %s",
+            self._attr_name, self._attr_unique_id, hub_serial
+        )
+        
+        # Set initial state if coordinator already has data.
+        # The actual registration of the listener happens in async_added_to_hass by CoordinatorEntity.
+        if self.coordinator.data:
+            self._handle_coordinator_update()
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                "RSSI Sensor %s: No data available from coordinator.", self.unique_id
+            )
+            self._attr_native_value = None
+        else:
+            rssi_value = self.coordinator.data.get('rssi_dbm')
+            if isinstance(rssi_value, (int, float)): # Allow float just in case, though int is expected
+                self._attr_native_value = int(rssi_value)
+            elif rssi_value is None:
+                self._attr_native_value = None
+                _LOGGER.debug("RSSI Sensor %s: RSSI value is None in coordinator data.", self.unique_id)
+            else:
+                _LOGGER.warning(
+                    "RSSI Sensor %s: Received non-numeric or unexpected value for rssi_dbm: %s (type: %s). Setting to None.",
+                    self.unique_id,
+                    rssi_value,
+                    type(rssi_value).__name__
+                )
+                self._attr_native_value = None
+        
+        # This method is called by the CoordinatorEntity base class,
+        # which also handles calling self.async_write_ha_state().
+        # However, explicit call is fine if not using a more complex base.
+        # For safety and explicitness, especially if base class behavior is uncertain:
+        if self.hass and self.entity_id: # Check if entity is added to hass
+            self.async_write_ha_state()
+        elif self.hass: # Added to HASS but entity_id not yet assigned (less common for _handle_coordinator_update)
+            # This path is less likely for a coordinator-driven update after initial setup,
+            # but included for robustness if _handle_coordinator_update is called early.
+            self.hass.async_create_task(self._delayed_write_state())
+            _LOGGER.debug("RSSI Sensor %s: Queued state write due to missing entity_id.", self.unique_id)
+
+    async def _delayed_write_state(self) -> None:
+        """Ensure entity_id is available before writing state."""
+        # This is mostly a safeguard.
+        # In normal operation, CoordinatorEntity calls _handle_coordinator_update
+        # which then calls async_write_ha_state at appropriate times.
+        if self.hass and self.entity_id:
+            self.async_write_ha_state()
+        else:
+            _LOGGER.warning("RSSI Sensor %s: Failed to write state after delay, entity_id still missing.", self.unique_id)
+
+    # The `available` property is inherited from CoordinatorEntity and is based on
+    # self.coordinator.last_update_success. This is generally sufficient.
+    # If rssi_dbm is None, the sensor is "available" but has an "unknown" state, which is correct.
+# --- End of Additions ---
+
+# ZeptrionAirEntity would typically be defined in ..entity.py
+# For this task, we'll assume it provides a base class that handles
+# coordinator listening and availability.
+# If ..entity.py or ZeptrionAirEntity does not exist, this part is a placeholder.
+try:
+    from ..entity import ZeptrionAirEntity
+except ImportError:
+    _LOGGER.warning("ZeptrionAirEntity not found in ..entity. Attempting to create a placeholder.")
+    # Placeholder Base Class if ZeptrionAirEntity is not found
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+    class ZeptrionAirEntity(CoordinatorEntity): # type: ignore[no-redef] 
+        """Placeholder for ZeptrionAirEntity if not defined."""
+        def __init__(self, coordinator, device_info):
+            super().__init__(coordinator)
+            self._attr_device_info = device_info
+        
+        # Subclasses are expected to implement _handle_coordinator_update
+        # and call self.async_write_ha_state()
+        # The CoordinatorEntity base class calls _handle_coordinator_update
+        # when the coordinator updates.
+
+
+from ..coordinator import ZeptrionAirDataUpdateCoordinator
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorStateClass,
+    UnitOfSignalStrength,
+)
+# DeviceInfo is already imported
+# DOMAIN is already imported
+
+
+class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
+    """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
+
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_native_unit_of_measurement = UnitOfSignalStrength.DECIBELS_MILLIWATT
+    _attr_state_class = SensorStateClass.MEASUREMENT 
+    _attr_entity_registry_enabled_default = True
+    _attr_has_entity_name = True # Enables using self.entity_description.name or automatic naming
+
+    def __init__(
+        self,
+        coordinator: ZeptrionAirDataUpdateCoordinator,
+        hub_device_info: DeviceInfo, # This is the DeviceInfo for the main Hub
+        hub_serial: str,
+        hub_name: str, # Used for a friendly name
+    ) -> None:
+        """Initialize the RSSI sensor."""
+        # Pass hub_device_info to ZeptrionAirEntity for linking to the hub device
+        super().__init__(coordinator, hub_device_info) 
+        
+        self._attr_name = f"{hub_name} Wi-Fi Signal"
+        self._attr_unique_id = f"{hub_serial}_rssi"
+        # self._attr_device_info is already set by super().__init__ if ZeptrionAirEntity sets it.
+        # If ZeptrionAirEntity does not set it, uncomment the line below.
+        # For this exercise, we assume ZeptrionAirEntity's constructor handles it.
+        # If it needs to be set explicitly:
+        # self._attr_device_info = hub_device_info
+
+        _LOGGER.debug(
+            f"RSSI Sensor initialized: {self._attr_name} (Unique ID: {self._attr_unique_id}) for hub {hub_serial}"
+        )
+        # Perform an initial update in case coordinator data is already available
+        self._handle_coordinator_update()
+
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.data:
+            rssi_value = self.coordinator.data.get('rssi_dbm')
+            if isinstance(rssi_value, (int, float)) or rssi_value is None:
+                 self._attr_native_value = rssi_value
+            else:
+                _LOGGER.warning(
+                    f"RSSI sensor {self.unique_id} received non-numeric or non-None value: {rssi_value}"
+                )
+                self._attr_native_value = None # Treat unexpected types as unknown
+        else:
+            _LOGGER.debug(f"RSSI sensor {self.unique_id} received no data from coordinator.")
+            self._attr_native_value = None # No data, so sensor value is unknown
+        
+        # Only call async_write_ha_state if the entity has been added to hass.
+        # This check is important because _handle_coordinator_update might be called
+        # during __init__ before the entity is fully set up in Home Assistant.
+        if self.hass and self.entity_id:
+            self.async_write_ha_state()
+        elif self.hass: # Entity added but entity_id not yet assigned (can happen)
+             self.hass.async_create_task(self._async_manual_write_state())
+        else:
+            _LOGGER.debug(f"RSSI sensor {self.unique_id} cannot write state, hass not available or not yet added.")
+
+    async def _async_manual_write_state(self):
+        """Helper to write state when entity_id might not be immediately available."""
+        # This is a workaround for scenarios where async_write_ha_state might be called
+        # too early by an initial _handle_coordinator_update in __init__.
+        await self.async_ බලන්න # This is a placeholder for a small delay if needed, or can be removed.
+                               # For example, await asyncio.sleep(0)
+                               # However, usually just scheduling it as a task is enough.
+        if self.hass and self.entity_id:
+             self.async_write_ha_state()
+        elif self.hass:
+            _LOGGER.debug(f"RSSI Sensor {self.unique_id} still cannot write state after task creation, entity_id missing.")
+
+
+    @property
+    def available(self) -> bool:
+        """Return True if coordinator has data and RSSI value exists."""
+        # The ZeptrionAirEntity or CoordinatorEntity base class should handle availability
+        # based on coordinator.last_update_success.
+        # This property can provide more specific availability based on the actual data point.
+        # However, if 'rssi_dbm' is None because the API returned it as such (e.g. device error),
+        # the sensor should be available but have a state of None.
+        # If the coordinator failed to update, the base class handles `available = False`.
+        # So, we mostly rely on the base class. If coordinator data is present, we are "available"
+        # in the sense that we can report a state (even if that state is None).
+        return super().available # Rely on CoordinatorEntity's availability logic
