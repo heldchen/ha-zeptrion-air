@@ -11,8 +11,6 @@ from homeassistant.components.button import ButtonEntity
 
 from .const import (
     DOMAIN, 
-    SERVICE_BLIND_UP_STEP, 
-    SERVICE_BLIND_DOWN_STEP, 
     SERVICE_BLIND_RECALL_S1, 
     SERVICE_BLIND_RECALL_S2, 
     SERVICE_BLIND_RECALL_S3, 
@@ -26,8 +24,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # Define action types and their corresponding labels and service names
 BUTTON_ACTIONS: list[dict[str, str]] = [
-    {"type": "blind_up_step", "label": "Step Up", "service": SERVICE_BLIND_UP_STEP, "icon": "mdi:arrow-up-bold-outline"},
-    {"type": "blind_down_step", "label": "Step Down", "service": SERVICE_BLIND_DOWN_STEP, "icon": "mdi:arrow-down-bold-outline"},
     {"type": "blind_recall_s1", "label": "Scene S1", "service": SERVICE_BLIND_RECALL_S1, "icon": "mdi:numeric-1-box-outline"},
     {"type": "blind_recall_s2", "label": "Scene S2", "service": SERVICE_BLIND_RECALL_S2, "icon": "mdi:numeric-2-box-outline"},
     {"type": "blind_recall_s3", "label": "Scene S3", "service": SERVICE_BLIND_RECALL_S3, "icon": "mdi:numeric-3-box-outline"},
@@ -157,19 +153,7 @@ class ZeptrionAirActionButton(ButtonEntity):
         client: ZeptrionAirApiClient = self.config_entry.runtime_data.client
 
         try:
-            if self._action_type == SERVICE_BLIND_UP_STEP:
-                step_duration: int = self.config_entry.options.get(
-                    CONF_STEP_DURATION_MS,
-                    self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
-                )
-                await client.async_channel_move_open(self._channel_id, time_ms=step_duration)
-            elif self._action_type == SERVICE_BLIND_DOWN_STEP:
-                step_duration: int = self.config_entry.options.get(
-                    CONF_STEP_DURATION_MS,
-                    self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
-                )
-                await client.async_channel_move_close(self._channel_id, time_ms=step_duration)
-            elif self._action_type == SERVICE_BLIND_RECALL_S1:
+            if self._action_type == SERVICE_BLIND_RECALL_S1:
                 await client.async_channel_recall_s1(self._channel_id)
             elif self._action_type == SERVICE_BLIND_RECALL_S2:
                 await client.async_channel_recall_s2(self._channel_id)
