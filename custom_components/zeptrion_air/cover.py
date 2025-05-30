@@ -39,10 +39,10 @@ async def async_setup_entry(
     platform_data: dict[str, Any] | None = hass.data[DOMAIN].get(entry.entry_id)
 
     if not platform_data:
-        _LOGGER.error(f"cover.py async_setup_entry: No platform_data found for entry ID {entry.entry_id}")
+        _LOGGER.error(f"async_setup_entry: No platform_data found for entry ID {entry.entry_id}")
         return False # Changed return
 
-    _LOGGER.debug(f"cover.py async_setup_entry: Received platform_data: {platform_data}")
+    _LOGGER.debug(f"async_setup_entry: Received platform_data: {platform_data}")
 
     main_hub_device_info: dict[str, Any] = platform_data.get("hub_device_info", {})
     identified_channels_list: list[dict[str, Any]] = platform_data.get("identified_channels", [])
@@ -50,7 +50,7 @@ async def async_setup_entry(
     
     hub_serial_for_blinds_maybe: str | None = platform_data.get("hub_serial")
     if not hub_serial_for_blinds_maybe:
-        _LOGGER.error("cover.py async_setup_entry: Hub serial not found in platform_data.")
+        _LOGGER.error("async_setup_entry: Hub serial not found in platform_data.")
         return False # Changed return
     hub_serial_for_blinds: str = hub_serial_for_blinds_maybe # Now str
 
@@ -70,18 +70,24 @@ async def async_setup_entry(
 
             if channel_id_maybe is None or channel_cat_maybe is None or device_type != "cover":
                 if device_type != "cover" and channel_id_maybe is not None : 
-                     _LOGGER.debug(f"cover.py: Skipping channel {channel_id_maybe} (Cat: {channel_cat_maybe}). Not a cover device_type ('{device_type}').")
+                     _LOGGER.debug(f"Skipping channel {channel_id_maybe} (Cat: {channel_cat_maybe}). Not a cover device_type ('{device_type}').")
                 else: 
-                     _LOGGER.warning(f"cover.py: Skipping channel due to missing id, cat or not being a cover: {channel_info_dict}")
+                     _LOGGER.warning(f"Skipping channel due to missing id, cat or not being a cover: {channel_info_dict}")
                 continue
             
             channel_id: int = channel_id_maybe # Now int
             channel_cat: int = channel_cat_maybe # Now int
             
             entity_base_name: str | None = channel_info_dict.get("entity_base_name")
-            desired_name: str = entity_base_name if entity_base_name is not None else f"{hub_entry_title} Channel {channel_id}"
+            desired_name: str = entity_base_name if entity_base_name is not None else f"Channel {channel_id}"
 
-            _LOGGER.debug(f"cover.py: Channel {channel_id} (Cat: {channel_cat}). Type is cover. Using Name: '{desired_name}'. Creating entity.")
+            # Create a stable base name for entity IDs (slugified version of entity_base_name)
+            # This will be used to generate consistent entity IDs regardless of friendly name changes
+            entity_base_slug = desired_name.lower().replace(' ', '_').replace('-', '_').replace('.', '_').replace(':', '_')
+            # Remove any double underscores and strip leading/trailing underscores
+            entity_base_slug = '_'.join(filter(None, entity_base_slug.split('_')))
+
+            _LOGGER.debug(f"Channel {channel_id} (Cat: {channel_cat}). Type is cover. Using Name: '{desired_name}'. Entity base slug: '{entity_base_slug}'. Creating entity.")
             
             # Type hub_manufacturer and hub_sw_version before use
             hub_manufacturer: str = main_hub_device_info.get("manufacturer", "Feller AG")
@@ -103,7 +109,8 @@ async def async_setup_entry(
                         device_info_for_blind_entity=blind_device_info,
                         channel_id=channel_id, # int
                         hub_serial=hub_serial_for_blinds, # str
-                        entry_title=hub_entry_title # str
+                        entry_title=hub_entry_title, # str
+                        entity_base_slug=entity_base_slug # Add this parameter
                     )
                 )
     
@@ -119,7 +126,6 @@ async def async_setup_entry(
     else:
         _LOGGER.info("No Zeptrion Air cover entities to add.") # Changed to info as per prompt
     
-    _LOGGER.info("cover.py: async_setup_entry completed successfully.")
     return True # Explicitly return True for successful setup
 
 
@@ -132,22 +138,28 @@ class ZeptrionAirBlind(CoverEntity):
         device_info_for_blind_entity: dict[str, Any], 
         channel_id: int,
         hub_serial: str, 
-        entry_title: str, 
+        entry_title: str,
+        entity_base_slug: str, # Add this parameter
     ) -> None:
         """Initialize the Zeptrion Air blind."""
         self.config_entry: ConfigEntry = config_entry 
         self._channel_id: int = channel_id
         
         self._attr_device_info: dict[str, Any] = device_info_for_blind_entity
-        # Ensure name is str
+        # Ensure name is str - this can be changed without affecting entity ID
         name_val = device_info_for_blind_entity.get("name")
-        self._attr_name: str = str(name_val) if name_val is not None else f"{entry_title} Channel {channel_id}"
-        self._attr_unique_id: str = f"{hub_serial}_ch{self._channel_id}"
-        _LOGGER.debug("ZeptrionAirBlind cover entity initialized with Unique ID: %s, Name: %s", self.unique_id, self.name)
+
+        #self._attr_has_entity_name = True
+        self._attr_name: str = str(name_val) if name_val is not None else f"Channel {channel_id}"
+        self._attr_unique_id = f"zapp_{hub_serial}_ch{self._channel_id}"
+        
+        _LOGGER.debug("ZeptrionAirBlind cover entity initialized:")
+        _LOGGER.debug("  Friendly name: '%s'", self._attr_name)
+        _LOGGER.debug("  Unique ID: '%s'", self._attr_unique_id)
 
         self._attr_is_closed: bool | None = None
-        self._attr_is_opening: bool = False
-        self._attr_is_closing: bool = False
+        self._attr_is_opening: bool | None = None
+        self._attr_is_closing: bool | None = None
         self._attr_current_cover_position: int | None = None
 
         self._attr_supported_features: CoverEntityFeature = (
@@ -364,4 +376,3 @@ class ZeptrionAirBlind(CoverEntity):
         except Exception as e: # Catch any other unexpected exceptions
             _LOGGER.error("Unexpected error while recalling S4 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S4 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-

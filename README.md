@@ -59,8 +59,8 @@ Please try to follow Home Assistant's development guidelines and ensure code is 
 
 ## Disclaimer & License
 
-"Home Assistant" is a project from the Open Home Foundation. This project ins not affilaited with nor endorsed by the Open Home Foundation. 
+"Home Assistant" is a project of the Open Home Foundation. This project is not affiliated with nor endorsed by the Open Home Foundation. 
 
 "Zeptrion", "Zeptrion Air" and the Zeptrion Air logo are property of & © by Feller AG 2016. This project is not affiliated with nor endorsed by Feller AG.
 
-All other files in this project are licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+All other files in this project are licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
