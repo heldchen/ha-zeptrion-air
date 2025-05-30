@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.cover import (
+    CoverDeviceClass, # Added
     CoverEntity,
     CoverEntityFeature,
 )
@@ -24,6 +25,8 @@ from .const import ( # Added import for service constants
     SERVICE_BLIND_RECALL_S2,
     SERVICE_BLIND_RECALL_S3,
     SERVICE_BLIND_RECALL_S4,
+    CONF_STEP_DURATION_MS, # Added
+    DEFAULT_STEP_DURATION_MS, # Added
     # ENTITY_IMAGE_CHANNEL, # Removed as it's no longer used
 )
 
@@ -157,6 +160,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("  Friendly name: '%s'", self._attr_name)
         _LOGGER.debug("  Unique ID: '%s'", self._attr_unique_id)
 
+        self._attr_device_class = CoverDeviceClass.SHUTTER # Added
         self._attr_is_closed: bool | None = None
         self._attr_is_opening: bool | None = None
         self._attr_is_closing: bool | None = None
@@ -248,10 +252,11 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_open_cover_tilt(self) -> None:
         """Tilt the cover open."""
         _LOGGER.debug("Tilting open blind %s (Channel %s)", self._attr_name, self._channel_id)
+        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS) # Added
         try:
             # According to task description, OPEN_TILT calls async_channel_move_close.
             # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
-            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id)
+            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms) # Modified
             # No optimistic state updates for tilt for now, similar to open/close.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -263,10 +268,11 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_close_cover_tilt(self) -> None:
         """Tilt the cover closed."""
         _LOGGER.debug("Tilting close blind %s (Channel %s)", self._attr_name, self._channel_id)
+        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS) # Added
         try:
             # According to task description, CLOSE_TILT calls async_channel_move_open.
             # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
-            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id)
+            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms) # Modified
             # No optimistic state updates for tilt for now.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
