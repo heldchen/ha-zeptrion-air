@@ -9,9 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN # Assuming DOMAIN is defined in const.py
-# We'll need access to the ZeptrionAirApiClient from the entry's runtime_data
-# and the channel details passed during setup.
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +22,7 @@ SENSOR_TYPES_TO_REGISTER: list[str] = [SENSOR_TYPE_NAME, SENSOR_TYPE_GROUP, SENS
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry, # Not using ZeptrionAirConfigEntry as it's not defined in this context
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     '''Set up Zeptrion Air sensor entities from a config entry.'''
@@ -48,14 +46,12 @@ async def async_setup_entry(
     # Using SensorEntity as a common base type for the list.
     new_entities: list[SensorEntity] = []
 
-    # Logic for ZeptrionAirChannelSensor (existing loop)
     for channel_info_dict in identified_channels_list:
         channel_id: int | None = channel_info_dict.get('id')
-        # channel_cat = channel_info_dict.get('cat') # Not strictly needed for sensors if they are for any channel
         
         # Ensure channel_id is valid before proceeding
-        if channel_id is None: # Guard makes channel_id effectively int after this for sensor creation
-            _LOGGER.debug(f"sensor.py: Skipping channel due to missing id: {channel_info_dict}")
+        if channel_id is None:
+            _LOGGER.debug(f"Skipping channel due to missing id: {channel_info_dict}")
             continue
 
         # Get the base device info for the channel (created by cover.py or light.py etc.)
@@ -84,17 +80,17 @@ async def async_setup_entry(
             SENSOR_TYPE_ICON_ID: {"name": "Icon ID", "value": channel_api_icon_id, "icon": "mdi:image-outline", "slug": "icon_id"},
         }
 
-        for sensor_type, info_data in details_map.items(): # Renamed info to info_data
-            if info_data["value"] is not None: # Only create sensor if detail exists
+        for sensor_type, info_data in details_map.items():
+            if info_data["value"] is not None:
                 new_entities.append(
                     ZeptrionAirChannelSensor(
-                        config_entry_unique_id=str(entry.unique_id or entry.entry_id), # Ensure str
-                        hub_serial=hub_serial, # hub_serial is str here
-                        channel_id=channel_id, # channel_id is int here
+                        config_entry_unique_id=str(entry.unique_id or entry.entry_id),
+                        hub_serial=hub_serial,
+                        channel_id=channel_id,
                         channel_device_identifier=channel_device_identifier, 
                         sensor_type=sensor_type,
                         sensor_name_suffix=info_data["name"],
-                        sensor_type_slug=info_data["slug"],  # Add stable slug for entity ID
+                        sensor_type_slug=info_data["slug"],
                         initial_value=info_data["value"],
                         icon_val=info_data["icon"],
                         # Base name for the channel, e.g., "Living Room Blind CH1" (friendly name)
@@ -129,12 +125,11 @@ async def async_setup_entry(
             missing_data_elements.append("coordinator")
         if not hub_device_info:
             missing_data_elements.append("hub_device_info")
-        if not hub_name: # hub_serial is already checked and would cause return if missing
+        if not hub_name:
             missing_data_elements.append("hub_name (entry_title)")
         _LOGGER.error(
             f"Could not create RSSI sensor for hub {hub_serial} due to missing data: {', '.join(missing_data_elements)}."
         )
-    # --- End of RSSI Sensor Addition ---
 
     if new_entities:
         _LOGGER.info(f"Adding {len(new_entities)} Zeptrion Air sensor entities in total.")
@@ -146,7 +141,7 @@ async def async_setup_entry(
 class ZeptrionAirChannelSensor(SensorEntity):
     '''Representation of a Zeptrion Air Channel Sensor.'''
 
-    _attr_entity_registry_enabled_default = False  # Disabled by default
+    _attr_entity_registry_enabled_default = False
     _attr_should_poll = False  # Data is pushed from coordinator or setup once
 
     def __init__(
@@ -157,11 +152,11 @@ class ZeptrionAirChannelSensor(SensorEntity):
         channel_device_identifier: tuple[str, str],
         sensor_type: str,
         sensor_name_suffix: str,
-        sensor_type_slug: str,  # Add stable slug parameter
+        sensor_type_slug: str,
         initial_value: str,
         icon_val: str | None,
         channel_base_name: str,
-        entity_base_slug: str  # Add stable base slug parameter
+        entity_base_slug: str
     ) -> None:
         '''Initialize the sensor.'''
         self._hub_serial: str = hub_serial
@@ -198,31 +193,13 @@ class ZeptrionAirChannelSensor(SensorEntity):
         # This could be enhanced if sensors were to update via a coordinator.
         return True
 
-    # No update method needed if _attr_should_poll = False and data is set at init.
-    # If these sensors were to be updated from a central coordinator:
-    # def _handle_coordinator_update(self) -> None:
-    #     '''Handle updated data from the coordinator.'''
-    #     # Example: self._attr_native_value = self.coordinator.data.get_channel_detail(...)
-    #     self.async_write_ha_state()
-
-    # async def async_added_to_hass(self) -> None:
-    #     '''Run when this Entity has been added to HA.'''
-    #     if self.coordinator: # If using a coordinator
-    #         self.async_on_remove(
-    #             self.coordinator.async_add_listener(self._handle_coordinator_update)
-    #         )
-
-# --- Additions for ZeptrionAirRssiSensor ---
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from homeassistant.components.sensor import (
     SensorDeviceClass,
-    SensorEntity, # Ensure SensorEntity is explicitly available
-    SensorStateClass, # For explicit state class setting
+    SensorEntity,
+    SensorStateClass,
 )
 from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT # Added import
-# DeviceInfo is already imported.
-# DOMAIN is already imported.
-# _LOGGER is already defined.
 
 from .entity import ZeptrionAirEntity # Ensure this import is present
 
@@ -231,23 +208,18 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
     _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
-    _attr_state_class = SensorStateClass.MEASUREMENT # Explicitly "measurement" string resolves to this enum
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = True
-    # _attr_has_entity_name = False (or omitted) is correct when _attr_name is directly set.
-    # If _attr_has_entity_name were True, HA would try to generate the name or expect entity_description.name.
 
     def __init__(
         self,
         coordinator: ZeptrionAirDataUpdateCoordinator,
         hub_device_info: DeviceInfo, # DeviceInfo for the main Hub
         hub_serial: str,
-        hub_name: str, # Used for a friendly name for the sensor
-        hub_name_slug: str,  # Add stable slug parameter
+        hub_name: str,
+        hub_name_slug: str,
     ) -> None:
         """Initialize the RSSI sensor."""
-        # ZeptrionAirEntity's __init__ is called.
-        # It's expected to take only the coordinator.
-        # The base class ZeptrionAirEntity is responsible for setting _attr_device_info.
         super().__init__(coordinator)
         self._hub_serial: str = hub_serial
         
@@ -284,7 +256,6 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
                 _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): 'rssi_dbm' value is None in coordinator data.")
                 self._attr_native_value = None
             else:
-                # Attempt to cast to int, as API might return string for numbers
                 try:
                     self._attr_native_value = int(rssi)
                     _LOGGER.debug(f"RSSI Sensor ({self.unique_id}): Updated native_value to {self._attr_native_value}.")
@@ -292,7 +263,6 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
                     _LOGGER.warning(f"RSSI Sensor ({self.unique_id}): Could not parse RSSI value '{rssi}' as int: {e}")
                     self._attr_native_value = None
         
-        if self.hass: # Check if HASS context is available for the entity
+        if self.hass:
             self.async_write_ha_state()
 
-    # The `available` property is inherited from CoordinatorEntity (via ZeptrionAirEntity)

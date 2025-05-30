@@ -1,5 +1,7 @@
 aiohttp
 async_timeout
 homeassistant>=2025.5.0
+http
+lovelace
 voluptuous
 xmltodict

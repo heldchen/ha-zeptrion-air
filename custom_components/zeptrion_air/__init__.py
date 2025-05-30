@@ -9,19 +9,19 @@ from __future__ import annotations
 
 import logging
 import re 
-from typing import TYPE_CHECKING, Any, cast # Added Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from homeassistant.config_entries import ConfigEntry # For entry type hint
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant # For hass type hint
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.loader import async_get_loaded_integration, Integration # For integration_obj
-from homeassistant.helpers import device_registry # For DeviceRegistry
+from homeassistant.loader import async_get_loaded_integration, Integration
+from homeassistant.helpers import device_registry
 
 from .api import (
     ZeptrionAirApiClient,
-    ZeptrionAirApiClientError, # Added import
-    ZeptrionAirApiClientCommunicationError, # Added import
+    ZeptrionAirApiClientError,
+    ZeptrionAirApiClientCommunicationError,
 )
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from .data import ZeptrionAirData
@@ -30,23 +30,18 @@ from .frontend import async_setup_frontend
 
 from .const import DOMAIN, LOGGER, CONF_HOSTNAME, PLATFORMS as ZEPTRION_PLATFORMS
 
-if TYPE_CHECKING: # Keep this for HomeAssistant, but ZeptrionAirConfigEntry is not used
+if TYPE_CHECKING:
     pass
-    # from .data import ZeptrionAirConfigEntry # Not using this
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry, # Using ConfigEntry as ZeptrionAirConfigEntry not defined
+    entry: ConfigEntry,
 ) -> bool:
     """Set up the Zeptrion Air Hub from a config entry."""
 
-    # Assuming CONF_HOSTNAME is guaranteed to be str by config flow
     hostname: str = entry.data[CONF_HOSTNAME] 
     api_client: ZeptrionAirApiClient = ZeptrionAirApiClient(hostname=hostname, session=async_get_clientsession(hass))
 
-    # Initialize Coordinator and runtime_data earlier
-    # Pass the api_client directly to the coordinator
     coordinator: ZeptrionAirDataUpdateCoordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
     integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
     
@@ -58,18 +53,17 @@ async def async_setup_entry(
     coordinator.config_entry = entry
 
     try:
-        # First refresh is no longer needed here, coordinator will fetch on its schedule
         # We need to perform an initial data fetch to get device_id for setup
         # This is a one-time fetch; subsequent updates are handled by the coordinator's schedule
         device_data_api = await api_client.async_get_device_identification() # Use api_client directly for initial fetch
 
         if not device_data_api:
             LOGGER.error(f"Failed to fetch initial device identification data for {hostname} using api_client.")
-            entry.runtime_data = None # Clear runtime_data on failure
+            entry.runtime_data = None
             return False
 
         # Fetch initial RSSI - supplemental, non-critical for setup to proceed
-        rssi_value = None # Default to None
+        rssi_value = None
         try:
             rssi_value = await api_client.async_get_rssi()
             LOGGER.debug(f"Successfully fetched initial RSSI for {hostname}: {rssi_value}")
@@ -79,34 +73,26 @@ async def async_setup_entry(
             LOGGER.warning(f"Initial RSSI fetch failed (API error) for {hostname}: {e}. Will rely on coordinator updates.")
         except Exception as e:
             LOGGER.error(f"Unexpected error during initial RSSI fetch for {hostname}: {e}. Will rely on coordinator updates.")
-        
-        # Add rssi_dbm to the device_data_api dictionary.
-        # device_data_api is confirmed to be a dictionary if we reached this point.
         device_data_api['rssi_dbm'] = rssi_value
         
         # Store the initially fetched data (now including RSSI) in the coordinator
         if coordinator.data is None:
             coordinator.data = device_data_api.copy()
-            # Note: If coordinator.data could already exist and we want to update it,
-            # this simple assignment might not be enough. However, given the current flow,
-            # coordinator.data is typically None at this stage of initial setup.
 
         # Fetch channel descriptions directly, this is a one-off setup task
         channel_des_data: dict[str, Any] = await api_client.async_get_channel_descriptions()
         LOGGER.debug(f"Full /zrap/chdes response for {hostname}: {channel_des_data}")
 
     except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
-        # This will catch errors from api_client.async_get_device_identification() or async_get_channel_descriptions()
         LOGGER.error(f"Failed to communicate with Zeptrion Air device {hostname} during setup: {e}")
-        entry.runtime_data = None # Clear runtime_data on failure
+        entry.runtime_data = None
         return False
-    # UpdateFailed is no longer expected here from async_config_entry_first_refresh
     except Exception as e:
         LOGGER.error(f"Unexpected error setting up Zeptrion Air device {hostname}: {e}")
-        entry.runtime_data = None # Clear runtime_data on failure
+        entry.runtime_data = None
         return False
 
-    zrap_id_data: dict[str, Any] = device_data_api.get('id', {}) # device_data_api is now checked for None
+    zrap_id_data: dict[str, Any] = device_data_api.get('id', {})
     if not zrap_id_data:
         LOGGER.error(f"Failed to get valid device identification from {hostname} (empty 'id' field)")
         return False
@@ -115,7 +101,7 @@ async def async_setup_entry(
     if not serial_number_maybe: 
         LOGGER.error(f"Could not determine serial number for {hostname} from API. Cannot set up device.")
         return False
-    serial_number: str = serial_number_maybe # Now str
+    serial_number: str = serial_number_maybe
         
     if entry.unique_id and entry.unique_id != serial_number:
         LOGGER.warning(
@@ -128,12 +114,11 @@ async def async_setup_entry(
     model: str = zrap_id_data.get('type', 'Zeptrion Air Device')
     hub_name: str = entry.title or hostname.replace('.local', '') 
 
-    # Type for hub_device_info elements
     hub_device_info_identifiers: set[tuple[str, str]] = {(DOMAIN, serial_number)}
     hub_device_info_connections: set[tuple[str, str]] = {(device_registry.CONNECTION_UPNP, hostname)}
     hub_device_info_sw_version: str | None = zrap_id_data.get('sw')
 
-    hub_device_info: dict[str, Any] = { # More specific: dict[str, str | set[tuple[str, str]] | None]
+    hub_device_info: dict[str, Any] = {
         "identifiers": hub_device_info_identifiers,
         "name": hub_name, # str
         "manufacturer": "Feller AG", # str
@@ -240,11 +225,8 @@ async def async_setup_entry(
 
     LOGGER.info(f"Final identified usable channels for {hub_name}: {identified_channels}")
 
-    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain) # Already moved up
+    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
     
-    # coordinator is already initialized and entry.runtime_data is set.
-    # zeptrion_air_data_for_runtime variable is no longer needed as entry.runtime_data is set directly.
-
     platform_setup_data: dict[str, Any] = {
         "hub_device_info": hub_device_info, 
         "identified_channels": identified_channels, 
@@ -254,9 +236,8 @@ async def async_setup_entry(
     }
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = platform_setup_data
     
-    # Removed: await coordinator.async_config_entry_first_refresh()
-    
     # Set up frontend components
+    
     await async_setup_frontend(hass, entry)
     
     # Wrapping up the setup
@@ -274,7 +255,7 @@ async def async_setup_entry(
 
 async def async_unload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry, # Using ConfigEntry
+    entry: ConfigEntry,
 ) -> bool:
     """Handle removal of an entry."""
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
@@ -288,7 +269,7 @@ async def async_unload_entry(
 
 async def async_reload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry, # Using ConfigEntry
+    entry: ConfigEntry,
 ) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)

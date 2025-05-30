@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any # Added
+from typing import Any
 import zeroconf
 
 import voluptuous as vol
@@ -18,13 +18,13 @@ from .api import (
     ZeptrionAirApiClientCommunicationError,
     ZeptrionAirApiClientError,
 )
-# Updated const import
+
 from .const import (
     DOMAIN,
     LOGGER,
     CONF_NAME,
     CONF_HOSTNAME,
-    CONF_IP_ADDRESS, # Added for clarity, was implicitly used
+    CONF_IP_ADDRESS,
     CONF_STEP_DURATION_MS,
     DEFAULT_STEP_DURATION_MS,
     MIN_STEP_DURATION_MS,
@@ -32,7 +32,7 @@ from .const import (
 )
 
 
-class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed class
+class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Zeptrion Air."""
 
     VERSION: int = 1
@@ -40,13 +40,13 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
 
     @staticmethod
     @callback
-    def async_get_options_flow( # Using ConfigEntry as ZeptrionAirConfigEntry not defined
+    def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow: 
         """Get the options flow for this handler."""
         return ZeptrionAirOptionsFlowHandler(config_entry)
 
-    discovery_info: dict[str, Any] # Typed attribute
+    discovery_info: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize the Zeptrion Air config flow."""
@@ -61,16 +61,15 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
         if user_input is not None:
             try:
                 api: ZeptrionAirApiClient = ZeptrionAirApiClient(
-                    hostname=user_input[CONF_HOSTNAME], # CONF_HOSTNAME is str
+                    hostname=user_input[CONF_HOSTNAME],
                     session=async_create_clientsession(self.hass),
                 )
                 device_info: dict[str, Any] = await api.async_get_device_identification()
                 LOGGER.info("ZAPI (user flow): get_device_identification: %s", device_info)
                 
-                # ---> START NEW LOGIC <---
                 zrap_id_data: dict[str, Any] = device_info.get('id', {})
                 serial_number: str | None = None
-                if isinstance(zrap_id_data, dict): # Ensure zrap_id_data is a dict before .get
+                if isinstance(zrap_id_data, dict):
                     serial_number = zrap_id_data.get('sn')
 
                 if serial_number:
@@ -78,8 +77,7 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
                     self._abort_if_unique_id_configured()
                 else:
                     LOGGER.error("Could not determine serial number from device %s for user setup.", user_input[CONF_HOSTNAME])
-                    errors["base"] = "unknown" # Placeholder, ideally "no_serial"
-                # ---> END NEW LOGIC <---
+                    errors["base"] = "unknown"
             except ZeptrionAirApiClientCommunicationError:
                 errors["base"] = "cannot_connect"
             except ZeptrionAirApiClientError:
@@ -89,8 +87,6 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
                 errors["base"] = "unknown"
             
             if not errors:
-                # user_input[CONF_HOSTNAME] is str
-                # user_input[CONF_STEP_DURATION_MS] is int (due to vol.Coerce(int))
                 data_to_store: dict[str, str | int] = {
                     CONF_HOSTNAME: user_input[CONF_HOSTNAME],
                     CONF_STEP_DURATION_MS: user_input[CONF_STEP_DURATION_MS],
@@ -115,11 +111,6 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
 
     async def async_step_zeroconf(self, discovery_info: zeroconf.ZeroconfServiceInfo) -> data_entry_flow.FlowResult:
         """Prepare configuration for a discovered Zeptrion Air device."""
-        # discovery_info.name is str
-        # discovery_info.hostname is str
-        # discovery_info.ip_address is IPv4Address | IPv6Address
-        # discovery_info.port is int
-        # discovery_info.properties is Mapping[str, Any]
         
         hostname: str = discovery_info.hostname[:-1] if discovery_info.hostname.endswith('.') else discovery_info.hostname
         
@@ -130,7 +121,7 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
             # or just "zapp-SERIALNUMBER" if .local is already stripped (e.g. by discovery_info.name)
             name_part = hostname.split(".")[0] # Get "zapp-SERIALNUMBER"
             serial_from_hostname = name_part.split("-")[1] # Get "SERIALNUMBER"
-            if serial_from_hostname: # Ensure it's not empty
+            if serial_from_hostname:
                 unique_id_to_set = serial_from_hostname
             else:
                 LOGGER.warning(
@@ -142,15 +133,15 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
             LOGGER.warning(
                 "Could not parse serial number from hostname: '%s' due to unexpected format. Falling back to full hostname.",
                 hostname,
-                exc_info=True # Add exception info for better debugging
+                exc_info=True
             )
 
         self.discovery_info = {
             CONF_NAME: discovery_info.name, 
             CONF_HOSTNAME: hostname, 
             CONF_IP_ADDRESS: str(discovery_info.ip_address),
-            'port': discovery_info.port, # int
-            'properties': dict(discovery_info.properties) # Convert Mapping to dict
+            'port': discovery_info.port,
+            'properties': dict(discovery_info.properties)
         }
         
         await self.async_set_unique_id(unique_id_to_set)
@@ -183,10 +174,9 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
                     session=async_create_clientsession(self.hass),
                 )
                 device_info_full: dict[str, Any] = await api.async_get_device_identification() 
-                # ---> START NEW LOGIC <---
                 zrap_id_data: dict[str, Any] = device_info_full.get('id', {})
                 serial_number: str | None = None
-                if isinstance(zrap_id_data, dict): # Ensure zrap_id_data is a dict
+                if isinstance(zrap_id_data, dict):
                     serial_number = zrap_id_data.get('sn')
 
                 if serial_number:
@@ -201,8 +191,7 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
                     })
                 else:
                     LOGGER.error("Could not determine serial number from discovered device %s for confirmation step.", self.discovery_info.get(CONF_HOSTNAME))
-                    errors["base"] = "unknown" # Placeholder, ideally "no_serial"
-                # ---> END NEW LOGIC <---
+                    errors["base"] = "unknown"
 
             except ZeptrionAirApiClientCommunicationError:
                 errors["base"] = "cannot_connect" 
@@ -210,9 +199,6 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
                 errors["base"] = "unknown" 
             
             if not errors:
-                # self.discovery_info[CONF_HOSTNAME] is str
-                # self.discovery_info[CONF_IP_ADDRESS] is str
-                # user_input[CONF_STEP_DURATION_MS] is int
                 data_to_store: dict[str, str | int] = {
                     CONF_HOSTNAME: str(self.discovery_info[CONF_HOSTNAME]),
                     CONF_IP_ADDRESS: str(self.discovery_info[CONF_IP_ADDRESS]), 
@@ -234,20 +220,20 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # Renamed
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=CONFIRM_SCHEMA, # Add schema to confirmation step
-            description_placeholders={ # These are shown to the user
+            data_schema=CONFIRM_SCHEMA,
+            description_placeholders={
                 CONF_NAME: self.discovery_info.get(CONF_NAME, self.discovery_info.get(CONF_HOSTNAME)),
                 CONF_HOSTNAME: self.discovery_info[CONF_HOSTNAME],
                 CONF_IP_ADDRESS: self.discovery_info[CONF_IP_ADDRESS],
             },
-            errors=errors, # Show errors on the confirm form
+            errors=errors,
         )
 
 # Options Flow Handler
 class ZeptrionAirOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Zeptrion Air options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None: # Using ConfigEntry
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry: config_entries.ConfigEntry = config_entry
         self.options: dict[str, Any] = dict(config_entry.options)

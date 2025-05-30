@@ -126,9 +126,6 @@ class ZeptrionAirActionButton(ButtonEntity):
         self._attr_has_entity_name = True
         self._attr_name: str = f"{action_label}"
         self._attr_unique_id = f"zapp_{self._hub_serial}_ch{self._channel_id}_{action_type_slug}"
-        
-        #        self._attr_unique_id: str = f"{self._hub_serial}_ch{self._channel_id}_{action_type_slug}_button"
-        
         self._attr_icon: str = icon
 
         _LOGGER.debug(

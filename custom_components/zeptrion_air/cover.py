@@ -5,39 +5,39 @@ import logging
 from typing import Any
 
 from homeassistant.components.cover import (
+    CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_platform # Added import
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Assuming ZeptrionAirHub will be defined in __init__.py and hold the client & device info
-# from . import ZeptrionAirHub
 from .api import ZeptrionAirApiClient, ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError # Adjusted if ZeptrionAirHub is not used directly here
-from .const import ( # Added import for service constants
+from .const import (
     DOMAIN,
     SERVICE_BLIND_RECALL_S1,
     SERVICE_BLIND_RECALL_S2,
     SERVICE_BLIND_RECALL_S3,
     SERVICE_BLIND_RECALL_S4,
+    CONF_STEP_DURATION_MS,
+    DEFAULT_STEP_DURATION_MS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry, # Using ConfigEntry as ZeptrionAirConfigEntry not defined
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-) -> bool: # Changed return type
+) -> bool:
     """Set up Zeptrion Air cover entities from a config entry."""
     platform_data: dict[str, Any] | None = hass.data[DOMAIN].get(entry.entry_id)
 
     if not platform_data:
         _LOGGER.error(f"async_setup_entry: No platform_data found for entry ID {entry.entry_id}")
-        return False # Changed return
+        return False
 
     _LOGGER.debug(f"async_setup_entry: Received platform_data: {platform_data}")
 
@@ -49,7 +49,7 @@ async def async_setup_entry(
     if not hub_serial_for_blinds_maybe:
         _LOGGER.error("async_setup_entry: Hub serial not found in platform_data.")
         return False # Changed return
-    hub_serial_for_blinds: str = hub_serial_for_blinds_maybe # Now str
+    hub_serial_for_blinds: str = hub_serial_for_blinds_maybe
 
     new_entities: list[ZeptrionAirBlind] = []
 
@@ -107,7 +107,7 @@ async def async_setup_entry(
                         channel_id=channel_id, # int
                         hub_serial=hub_serial_for_blinds, # str
                         entry_title=hub_entry_title, # str
-                        entity_base_slug=entity_base_slug # Add this parameter
+                        entity_base_slug=entity_base_slug
                     )
                 )
     
@@ -115,15 +115,15 @@ async def async_setup_entry(
         for entity in new_entities: # entity is ZeptrionAirBlind
             _LOGGER.debug(
                 "Preparing to add cover entity: Name: %s, Unique ID: %s",
-                entity.name, # Using property entity.name
-                entity.unique_id # Using property entity.unique_id
+                entity.name,
+                entity.unique_id
             )
         _LOGGER.info("Adding %s ZeptrionAirBlind cover entities.", len(new_entities))
         async_add_entities(new_entities)
     else:
-        _LOGGER.info("No Zeptrion Air cover entities to add.") # Changed to info as per prompt
+        _LOGGER.info("No Zeptrion Air cover entities to add.")
     
-    return True # Explicitly return True for successful setup
+    return True
 
 
 class ZeptrionAirBlind(CoverEntity):
@@ -131,21 +131,20 @@ class ZeptrionAirBlind(CoverEntity):
 
     def __init__(
         self,
-        config_entry: ConfigEntry, # Using ConfigEntry as ZeptrionAirConfigEntry not defined
+        config_entry: ConfigEntry,
         device_info_for_blind_entity: dict[str, Any], 
         channel_id: int,
         hub_serial: str, 
         entry_title: str,
-        entity_base_slug: str, # Add this parameter
+        entity_base_slug: str,
     ) -> None:
         """Initialize the Zeptrion Air blind."""
         self.config_entry: ConfigEntry = config_entry 
         self._channel_id: int = channel_id
         
         self._attr_device_info: dict[str, Any] = device_info_for_blind_entity
-        # Ensure name is str - this can be changed without affecting entity ID
+        
         name_val = device_info_for_blind_entity.get("name")
-
         #self._attr_has_entity_name = True
         self._attr_name: str = str(name_val) if name_val is not None else f"Channel {channel_id}"
         self._attr_unique_id = f"zapp_{hub_serial}_ch{self._channel_id}"
@@ -154,6 +153,8 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("  Friendly name: '%s'", self._attr_name)
         _LOGGER.debug("  Unique ID: '%s'", self._attr_unique_id)
 
+        self._attr_device_class = CoverDeviceClass.SHUTTER
+        
         self._attr_is_closed: bool | None = None
         self._attr_is_opening: bool | None = None
         self._attr_is_closing: bool | None = None
@@ -204,10 +205,9 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while opening blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while opening blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to open blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-
 
     async def async_close_cover(self) -> None:
         """Close the cover."""
@@ -222,7 +222,7 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while closing blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while closing blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -238,37 +238,35 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
     async def async_open_cover_tilt(self) -> None:
         """Tilt the cover open."""
         _LOGGER.debug("Tilting open blind %s (Channel %s)", self._attr_name, self._channel_id)
+        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
-            # According to task description, OPEN_TILT calls async_channel_move_close.
-            # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
-            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id)
+            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
             # No optimistic state updates for tilt for now, similar to open/close.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
     async def async_close_cover_tilt(self) -> None:
         """Tilt the cover closed."""
         _LOGGER.debug("Tilting close blind %s (Channel %s)", self._attr_name, self._channel_id)
+        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
-            # According to task description, CLOSE_TILT calls async_channel_move_open.
-            # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
-            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id)
+            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
             # No optimistic state updates for tilt for now.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -299,7 +297,7 @@ class ZeptrionAirBlind(CoverEntity):
                                             
         platform: entity_platform.EntityPlatform | None = entity_platform.async_get_current_platform()
 
-        if platform: # Guard against platform being None
+        if platform:
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S1,
                 {},
@@ -323,31 +321,6 @@ class ZeptrionAirBlind(CoverEntity):
         else:
             _LOGGER.warning("Entity platform not available for %s, services not registered.", self.entity_id)
 
-
-    async def async_blind_up_step(self) -> None:
-        """Move the blind up by a step (default 500ms)."""
-        _LOGGER.debug("Stepping up blind %s (Channel %s)", self.name, self._channel_id)
-        try:
-            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id) # Uses default 500ms
-        except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
-            _LOGGER.error("API error while stepping up blind %s (Channel %s): %s", self.name, self._channel_id, e)
-            raise HomeAssistantError(f"Failed to step up blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
-            _LOGGER.error("Unexpected error while stepping up blind %s (Channel %s): %s", self.name, self._channel_id, e)
-            raise HomeAssistantError(f"Failed to step up blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-
-    async def async_blind_down_step(self) -> None:
-        """Move the blind down by a step (default 500ms)."""
-        _LOGGER.debug("Stepping down blind %s (Channel %s)", self.name, self._channel_id)
-        try:
-            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id) # Uses default 500ms
-        except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
-            _LOGGER.error("API error while stepping down blind %s (Channel %s): %s", self.name, self._channel_id, e)
-            raise HomeAssistantError(f"Failed to step down blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
-            _LOGGER.error("Unexpected error while stepping down blind %s (Channel %s): %s", self.name, self._channel_id, e)
-            raise HomeAssistantError(f"Failed to step down blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-
     async def async_blind_recall_s1(self) -> None:
         """Recall scene S1 for the blind."""
         _LOGGER.debug("Recalling S1 for blind %s (Channel %s)", self.name, self._channel_id)
@@ -356,7 +329,7 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while recalling S1 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S1 for blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while recalling S1 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S1 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -368,7 +341,7 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while recalling S2 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S2 for blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while recalling S2 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S2 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -380,7 +353,7 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while recalling S3 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S3 for blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while recalling S3 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S3 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -392,7 +365,7 @@ class ZeptrionAirBlind(CoverEntity):
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while recalling S4 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S4 for blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
-        except Exception as e: # Catch any other unexpected exceptions
+        except Exception as e:
             _LOGGER.error("Unexpected error while recalling S4 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S4 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 

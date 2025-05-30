@@ -17,7 +17,7 @@ CONF_PORT: str = "port"
 CONF_HOSTNAME: str = "hostname"
 CONF_TYPE: str = "type"
 CONF_FIRMWARE: str = "firmware"
-CONF_STEP_DURATION_MS: str = "step_duration_ms" # Added
+CONF_STEP_DURATION_MS: str = "step_duration_ms"
 
 # Services
 SERVICE_BLIND_RECALL_S1: str = "blind_recall_s1"
@@ -33,9 +33,5 @@ MIN_STEP_DURATION_MS: int = 100
 MAX_STEP_DURATION_MS: int = 32000
 
 # Platforms
-PLATFORMS: list[Platform] = [Platform.COVER, Platform.BUTTON, Platform.SENSOR] # Added "light", switch still removed
-
-# Image URLs
-ENTITY_IMAGE_HUB: str = "/static/integrations/zeptrion_air/hub.png"
-ENTITY_IMAGE_CHANNEL: str = "/static/integrations/zeptrion_air/channel.jpg"
+PLATFORMS: list[Platform] = [Platform.COVER, Platform.BUTTON, Platform.SENSOR]
 
