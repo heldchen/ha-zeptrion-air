@@ -26,6 +26,8 @@ from .api import (
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from .data import ZeptrionAirData
 
+from .frontend import async_setup_frontend
+
 from .const import DOMAIN, LOGGER, CONF_HOSTNAME, PLATFORMS as ZEPTRION_PLATFORMS
 
 if TYPE_CHECKING: # Keep this for HomeAssistant, but ZeptrionAirConfigEntry is not used
@@ -205,13 +207,17 @@ async def async_setup_entry(
         resolved_entity_name: str
         if friendly_name and friendly_name.strip():
             if name and name.strip():
-                resolved_entity_name = f"{hub_name} {friendly_name.strip()} - {name.strip()}"
+                # resolved_entity_name = f"{hub_name} {friendly_name.strip()} - {name.strip()}"
+                resolved_entity_name = f"{friendly_name.strip()} - {name.strip()}"
             else:
-                resolved_entity_name = f"{hub_name} {friendly_name.strip()}"
+                # resolved_entity_name = f"{hub_name} {friendly_name.strip()}"
+                resolved_entity_name = f"{friendly_name.strip()}"
         elif name and name.strip():
-            resolved_entity_name = f"{hub_name} {name.strip()}"
+            # resolved_entity_name = f"{hub_name} {name.strip()}"
+            resolved_entity_name = f"{name.strip()}"
         else:
-            resolved_entity_name = f"{hub_name} Channel {channel_id_int}"
+            # resolved_entity_name = f"{hub_name} Channel {channel_id_int}"
+            resolved_entity_name = f"Channel {channel_id_int}"
         
         channel_info["entity_base_name"] = resolved_entity_name
         LOGGER.debug(f"Constructed entity_base_name for ch {channel_id_int}: '{resolved_entity_name}' from api_group: '{friendly_name}', api_name: '{name}'")
@@ -249,6 +255,11 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = platform_setup_data
     
     # Removed: await coordinator.async_config_entry_first_refresh()
+    
+    # Set up frontend components
+    await async_setup_frontend(hass, entry)
+    
+    # Wrapping up the setup
 
     LOGGER.debug("Forwarding setup to platforms: %s", ZEPTRION_PLATFORMS)
     LOGGER.debug("Attempting to forward entry setups for %s.", entry.entry_id)
