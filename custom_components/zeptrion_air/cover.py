@@ -165,7 +165,9 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_supported_features: CoverEntityFeature = (
             CoverEntityFeature.OPEN |
             CoverEntityFeature.CLOSE |
-            CoverEntityFeature.STOP
+            CoverEntityFeature.STOP |
+            CoverEntityFeature.OPEN_TILT |
+            CoverEntityFeature.CLOSE_TILT
         )
 
     @property
@@ -243,6 +245,36 @@ class ZeptrionAirBlind(CoverEntity):
             _LOGGER.error("Unexpected error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
+    async def async_open_cover_tilt(self) -> None:
+        """Tilt the cover open."""
+        _LOGGER.debug("Tilting open blind %s (Channel %s)", self._attr_name, self._channel_id)
+        try:
+            # According to task description, OPEN_TILT calls async_channel_move_close.
+            # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
+            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id)
+            # No optimistic state updates for tilt for now, similar to open/close.
+        except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
+            raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
+        except Exception as e: # Catch any other unexpected exceptions
+            _LOGGER.error("Unexpected error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
+            raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
+
+    async def async_close_cover_tilt(self) -> None:
+        """Tilt the cover closed."""
+        _LOGGER.debug("Tilting close blind %s (Channel %s)", self._attr_name, self._channel_id)
+        try:
+            # According to task description, CLOSE_TILT calls async_channel_move_open.
+            # This might be specific to how Zeptrion blinds handle tilt (e.g., a short pulse).
+            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id)
+            # No optimistic state updates for tilt for now.
+        except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
+            raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
+        except Exception as e: # Catch any other unexpected exceptions
+            _LOGGER.error("Unexpected error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
+            raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
+
     # No async_update method as the device does not provide reliable position feedback.
     # State updates would be optimistic if implemented in open/close/stop.
     # Or, a periodic poll of /zrap/chscan could be done, but it only returns -1 for blinds.
@@ -271,16 +303,6 @@ class ZeptrionAirBlind(CoverEntity):
         platform: entity_platform.EntityPlatform | None = entity_platform.async_get_current_platform()
 
         if platform: # Guard against platform being None
-            platform.async_register_entity_service(
-                SERVICE_BLIND_UP_STEP,
-                {}, # No service call schema
-                self.async_blind_up_step.__name__ # Method name string "async_blind_up_step"
-            )
-            platform.async_register_entity_service(
-                SERVICE_BLIND_DOWN_STEP,
-                {},
-                self.async_blind_down_step.__name__ # "async_blind_down_step"
-            )
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S1,
                 {},
