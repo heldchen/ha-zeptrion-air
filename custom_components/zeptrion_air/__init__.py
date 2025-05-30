@@ -137,18 +137,31 @@ async def async_setup_entry(
     )
 
     # ---- WebSocket Listener Setup ----
+    _LOGGER.debug(f"[{hostname}] Preparing to initialize WebSocket listener.") # ADDED
     # Ensure runtime_data is ZeptrionAirData before proceeding
     current_runtime_data = entry.runtime_data
     if isinstance(current_runtime_data, ZeptrionAirData):
-        LOGGER.debug(f"[{hostname}] Initializing WebSocket listener.")
+        LOGGER.debug(f"[{hostname}] Initializing WebSocket listener object.") # MODIFIED
         websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass)
+        _LOGGER.debug(f"[{hostname}] WebSocket listener instance created.") # ADDED
+
+        _LOGGER.debug(f"[{hostname}] Attempting to start WebSocket listener.") # ADDED
         await websocket_listener.start() # Start the listener
+        _LOGGER.debug(f"[{hostname}] WebSocket listener start() method called.") # ADDED
+
         current_runtime_data.websocket_listener = websocket_listener
         LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
+        _LOGGER.debug(f"[{hostname}] WebSocket listener stored in runtime_data.") # ADDED
     else:
         LOGGER.error(f"[{hostname}] runtime_data is not correctly initialized as ZeptrionAirData. Cannot setup or store websocket_listener.")
+        # If websocket_listener was created, try to stop it.
+        if 'websocket_listener' in locals() and websocket_listener:
+            _LOGGER.debug(f"[{hostname}] Attempting to stop websocket listener due to runtime_data issue.")
+            await websocket_listener.stop()
         # Depending on criticality, could return False or raise an error.
         # For now, we log the error and proceed without WS, as core functionality might still work.
+        # Consider returning False if WS is essential:
+        # return False
 
     identified_channels: list[dict[str, Any]] = []
     
