@@ -23,26 +23,26 @@ class ZeptrionAirWebsocketListener:
         try:
             # The legacy code used port from a 'panel' object.
             # Attempting standard path, adjust if known.
-            self.websocket = await websockets.connect(self._ws_url)
+            self._websocket = await websockets.connect(self._ws_url)
             _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
             self._is_running = True
         except Exception as e:
             _LOGGER.error(f"[{self._hostname}] Error connecting to websocket: {e}")
-            self.websocket = None
+            self._websocket = None
             self._is_running = False # Ensure this is false if connection fails
 
     async def listen(self):
-        if not self.websocket or not self._is_running:
+        if not self._websocket or not self._is_running:
             await self._connect()
-            if not self.websocket: # Still no connection after attempt
+            if not self._websocket: # Still no connection after attempt
                 _LOGGER.warning(f"[{self._hostname}] Could not establish websocket connection. Will retry later.")
                 # Implement a backoff retry mechanism if desired, for now, it will retry on next HA call if any.
                 return
 
         try:
-            while self._is_running and self.websocket:
+            while self._is_running and self._websocket:
                 try:
-                    message_raw = await asyncio.wait_for(self.websocket.recv(), timeout=30.0) # Keepalive/timeout
+                    message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=30.0) # Keepalive/timeout
                     status_time = time.time()
                     _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
                     decoded_message = self._decode_message(message_raw, status_time)
@@ -56,7 +56,7 @@ class ZeptrionAirWebsocketListener:
                         # Zeptrion devices might not support standard WS pings,
                         # or might have a proprietary keepalive.
                         # This is a standard way to keep a connection alive if pongs are supported.
-                        pong_waiter = await self.websocket.ping()
+                        pong_waiter = await self._websocket.ping()
                         await asyncio.wait_for(pong_waiter, timeout=10)
                         #_LOGGER.debug(f"[{self._hostname}] Ping successful.")
                     except Exception as e:
@@ -144,7 +144,7 @@ class ZeptrionAirWebsocketListener:
     async def stop(self):
         _LOGGER.info(f"[{self._hostname}] Stopping websocket listener.")
         self._is_running = False # Signal listen loop to stop
-        if self.websocket:
+        if self._websocket:
             await self._close_websocket()
         if self._task and not self._task.done():
             self._task.cancel()
@@ -158,11 +158,11 @@ class ZeptrionAirWebsocketListener:
         _LOGGER.debug(f"[{self._hostname}] Websocket listener fully stopped.")
 
     async def _close_websocket(self):
-        if self.websocket:
+        if self._websocket:
             try:
-                await self.websocket.close()
+                await self._websocket.close()
                 _LOGGER.debug(f"[{self._hostname}] Websocket connection closed.")
             except Exception as e:
                 _LOGGER.error(f"[{self._hostname}] Error closing websocket: {e}")
             finally:
-                self.websocket = None
+                self._websocket = None
