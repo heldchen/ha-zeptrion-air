@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import time
+
+from .const import ZEPTRION_AIR_WEBSOCKET_MESSAGE
 import websockets
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,7 +66,11 @@ class ZeptrionAirWebsocketListener:
                             decoded_message = self._decode_message(message_raw, status_time)
                             if decoded_message:
                                 _LOGGER.debug(f"[{self._hostname}] Decoded WS Message: {decoded_message}")
-                                # TODO: Dispatch message to Home Assistant (e.g., via coordinator or event)
+                                if decoded_message.get("source") == "eid1":
+                                    self._hass.bus.async_fire(
+                                        ZEPTRION_AIR_WEBSOCKET_MESSAGE,
+                                        decoded_message
+                                    )
 
                         except asyncio.TimeoutError:  # Timeout on recv()
                             _LOGGER.debug(f"[{self._hostname}] Websocket recv timed out. Checking connection with a ping.")
