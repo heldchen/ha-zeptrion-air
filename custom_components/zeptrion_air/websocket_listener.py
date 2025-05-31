@@ -20,8 +20,8 @@ class ZeptrionAirWebsocketListener:
 
     async def _connect_with_retry(self):
         """Connect to websocket with exponential backoff retry logic."""
-        backoff_time = 5  # Initial backoff time in seconds
-        max_backoff_time = 60  # Maximum backoff time
+        backoff_time = 1
+        max_backoff_time = 60
 
         while self._is_running:
             _LOGGER.debug(f"[{self._hostname}] Attempting to connect to websocket at {self._ws_url}...")
@@ -44,7 +44,7 @@ class ZeptrionAirWebsocketListener:
                 _LOGGER.error(f"[{self._hostname}] Unexpected error connecting to websocket {self._ws_url}: {type(e).__name__} - {e}")
 
             # If connection failed, clean up and prepare for retry
-            await self._close_websocket() # Ensure websocket is None if connection failed
+            await self._close_websocket()
 
             if not self._is_running:
                 _LOGGER.info(f"[{self._hostname}] Stop requested during connection attempt. Exiting connect_with_retry.")
@@ -55,7 +55,7 @@ class ZeptrionAirWebsocketListener:
                 await asyncio.sleep(backoff_time)
             except asyncio.CancelledError:
                 _LOGGER.info(f"[{self._hostname}] Sleep for backoff was cancelled. Likely stop requested.")
-                return None # Stop was requested during sleep
+                return None
 
             backoff_time = min(max_backoff_time, backoff_time * 2)
 
@@ -71,7 +71,7 @@ class ZeptrionAirWebsocketListener:
 
             if not self._websocket or not self._is_running:
                 _LOGGER.info(f"[{self._hostname}] Connection could not be established or stop requested. Exiting listener loop.")
-                break # Exit if connection failed and _is_running is false or connection object is None
+                break
 
             _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
             try:
@@ -96,16 +96,16 @@ class ZeptrionAirWebsocketListener:
                         break
                     except websockets.exceptions.ConnectionClosed as e:
                         _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
-                        await self._close_websocket() # Ensure cleanup before breaking
+                        await self._close_websocket()
                         break
                     except Exception as e:
                         _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
-                        await self._close_websocket() # Ensure cleanup before breaking
+                        await self._close_websocket()
                         break
 
                 if not self._is_running:
                     _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
-            except Exception as e: # Should ideally not be reached if inner exceptions are handled
+            except Exception as e:
                 _LOGGER.error(f"[{self._hostname}] Unexpected error in message receiving logic wrapper: {type(e).__name__} - {e}")
                 await self._close_websocket()
 
@@ -114,7 +114,7 @@ class ZeptrionAirWebsocketListener:
             # No explicit sleep or backoff here, as _connect_with_retry handles it.
 
         _LOGGER.info(f"[{self._hostname}] Websocket listener has fully stopped.")
-        await self._close_websocket() # Final cleanup
+        await self._close_websocket()
 
     def _decode_message(self, message_raw: str, status_time: float) -> dict | None:
         """Decode websocket message and return structured data."""
@@ -141,7 +141,6 @@ class ZeptrionAirWebsocketListener:
 
             if channel is None or value is None:
                 _LOGGER.warning(f"[{self._hostname}] Received eid1 message with missing 'ch' or 'val': {message_json}")
-                # Depending on strictness, could return None here. For now, allow partial data.
 
             decoded_info.update({
                 "type": "value_update",
@@ -214,16 +213,6 @@ class ZeptrionAirWebsocketListener:
         await self._close_websocket()
         self._task = None
         _LOGGER.info(f"[{self._hostname}] Websocket listener fully stopped and cleaned up.")
-
-    def is_alive(self) -> bool:
-        """Check if the listener task is active."""
-        if self._task:
-            task_done = self._task.done()
-            _LOGGER.debug(f"[{self._hostname}] is_alive check: Task exists, task.done() = {task_done}")
-            return not task_done
-        else:
-            _LOGGER.debug(f"[{self._hostname}] is_alive check: Task does not exist.")
-            return False
 
     async def _close_websocket(self):
         """Close websocket connection and cleanup."""

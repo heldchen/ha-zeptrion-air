@@ -17,8 +17,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_loaded_integration, Integration
 from homeassistant.helpers import device_registry
-from homeassistant.helpers.event import async_track_time_interval # WATCHDOG
-from datetime import timedelta # WATCHDOG
+from homeassistant.helpers.event import async_track_time_interval
+from datetime import timedelta
 
 from .api import (
     ZeptrionAirApiClient,
@@ -27,7 +27,7 @@ from .api import (
 )
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from .data import ZeptrionAirData
-from .websocket_listener import ZeptrionAirWebsocketListener # ADDED WS LISTENER IMPORT
+from .websocket_listener import ZeptrionAirWebsocketListener
 
 from .frontend import async_setup_frontend
 
@@ -147,7 +147,7 @@ async def async_setup_entry(
         LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
 
         # Define and schedule the watchdog
-        async def async_websocket_watchdog(now=None): # now is passed by async_track_time_interval
+        async def async_websocket_watchdog(now=None):
             """Check the websocket listener and restart if necessary."""
             LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
             if not websocket_listener.is_alive():
@@ -161,22 +161,17 @@ async def async_setup_entry(
                 LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
 
         # Schedule the watchdog to run every 5 minutes
-        # The cancel callback will be stored in the next step
         cancel_watchdog_callback = async_track_time_interval(
             hass,
             async_websocket_watchdog,
             timedelta(minutes=5)
         )
-        # Storing the cancel callback will be handled in the next subtask.
-        # For now, we just assign it to a variable to make it clear it's generated.
         current_runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
-        LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes and cancel callback stored.")
+        LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
 
     else:
-        # This else block corresponds to `if isinstance(current_runtime_data, ZeptrionAirData):`
-        # If current_runtime_data is not ZeptrionAirData, we might have an issue.
         # If websocket_listener was somehow initialized before this check failed, ensure it's stopped.
-        if 'websocket_listener' in locals() and websocket_listener: # Check if listener was initialized
+        if 'websocket_listener' in locals() and websocket_listener:
             LOGGER.warning(f"[{hostname}] Runtime data is not ZeptrionAirData instance. Stopping websocket listener if active.")
             await websocket_listener.stop()
         LOGGER.error(f"[{hostname}] Cannot start WebSocket listener or watchdog: runtime_data is not a ZeptrionAirData instance.")
