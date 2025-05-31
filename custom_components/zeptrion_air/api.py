@@ -210,7 +210,6 @@ class ZeptrionAirApiClient:
                 # We attempt to parse XML for consistency, but handle errors.
                 _verify_response_or_raise(response)
 
-
                 # The API doc says 302 for /zrap/chctrl.
                 # aiohttp handles redirects by default. The final page might not be XML.
                 # Or it might be an error page in XML.
@@ -321,24 +320,20 @@ class ZeptrionAirApiClient:
 
     async def async_get_channel_descriptions(self) -> dict[str, Any]:
         """Fetch channel descriptions from /zrap/chdes."""
-        # This assumes /zrap/chdes returns descriptions for all configured channels.
-        # If it needs to be called per channel (e.g., /zrap/chdes/ch1), this design would need adjustment.
         _LOGGER.debug(f"Fetching channel descriptions from /zrap/chdes for {self._hostname}")
         try:
             response_data = await self._api_xml_wrapper(
                 method="get",
-                path="/zrap/chdes", # Assuming this is the correct path for all channel descriptions
+                path="/zrap/chdes",
             )
-            # Add logging for the raw response if helpful for debugging later
             # _LOGGER.debug(f"/zrap/chdes response: {response_data}")
             return response_data
         except ZeptrionAirApiClientCommunicationError as e:
             _LOGGER.error(f"Communication error fetching channel descriptions from {self._hostname}: {e}")
-            # Re-raise or return empty dict/None to allow caller to handle
-            raise # Or handle more gracefully if preferred (e.g., return {})
+            raise
         except ZeptrionAirApiClientError as e: # Catch other client errors
             _LOGGER.error(f"API client error fetching channel descriptions from {self._hostname}: {e}")
-            raise # Or return {}
+            raise
 
     async def async_channel_on(self, channel: int) -> dict[str, Any]:
         """Send 'on' command to a channel for light control."""

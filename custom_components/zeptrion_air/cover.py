@@ -7,8 +7,6 @@ from typing import Any
 from homeassistant.components.cover import (
     CoverDeviceClass,
     CoverEntity,
-    CoverDeviceClass,
-    CoverEntity,
     CoverEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -16,7 +14,8 @@ from homeassistant.core import HomeAssistant, Event
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .api import ZeptrionAirApiClient, ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError # Adjusted if ZeptrionAirHub is not used directly here
+
+from .api import ZeptrionAirApiClient, ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError
 from .const import (
     DOMAIN,
     SERVICE_BLIND_RECALL_S1,
@@ -39,10 +38,10 @@ async def async_setup_entry(
     platform_data: dict[str, Any] | None = hass.data[DOMAIN].get(entry.entry_id)
 
     if not platform_data:
-        _LOGGER.error(f"async_setup_entry: No platform_data found for entry ID {entry.entry_id}")
+        _LOGGER.error("No platform_data found for entry ID %s", entry.entry_id)
         return False
 
-    _LOGGER.debug(f"async_setup_entry: Received platform_data: {platform_data}")
+    _LOGGER.debug("Received platform_data: %s", platform_data)
 
     main_hub_device_info: dict[str, Any] = platform_data.get("hub_device_info", {})
     identified_channels_list: list[dict[str, Any]] = platform_data.get("identified_channels", [])
@@ -50,77 +49,72 @@ async def async_setup_entry(
     
     hub_serial_for_blinds_maybe: str | None = platform_data.get("hub_serial")
     if not hub_serial_for_blinds_maybe:
-        _LOGGER.error("async_setup_entry: Hub serial not found in platform_data.")
-        return False # Changed return
+        _LOGGER.error("Hub serial not found in platform_data.")
+        return False
     hub_serial_for_blinds: str = hub_serial_for_blinds_maybe
 
     new_entities: list[ZeptrionAirBlind] = []
 
     panel_type_mapping: dict[int, str] = {
-        5: "Blinds", # Rollladen
-        6: "Markise" # Markise/Awning
-        # Add other mappings here if other cat values are used for covers in the future
+        5: "Blinds",
+        6: "Markise"
     }
 
     if identified_channels_list:
-        for channel_info_dict in identified_channels_list: # channel_info_dict is dict[str, Any]
+        for channel_info_dict in identified_channels_list:
             channel_id_maybe: int | None = channel_info_dict.get('id')
             channel_cat_maybe: int | None = channel_info_dict.get('cat')
             device_type: str | None = channel_info_dict.get('device_type')
 
             if channel_id_maybe is None or channel_cat_maybe is None or device_type != "cover":
-                if device_type != "cover" and channel_id_maybe is not None : 
-                     _LOGGER.debug(f"Skipping channel {channel_id_maybe} (Cat: {channel_cat_maybe}). Not a cover device_type ('{device_type}').")
+                if device_type != "cover" and channel_id_maybe is not None: 
+                     _LOGGER.debug("Skipping channel %s (Cat: %s). Not a cover device_type ('%s').", 
+                                   channel_id_maybe, channel_cat_maybe, device_type)
                 else: 
-                     _LOGGER.warning(f"Skipping channel due to missing id, cat or not being a cover: {channel_info_dict}")
+                     _LOGGER.warning("Skipping channel due to missing id, cat or not being a cover: %s", 
+                                     channel_info_dict)
                 continue
             
-            channel_id: int = channel_id_maybe # Now int
-            channel_cat: int = channel_cat_maybe # Now int
+            channel_id: int = channel_id_maybe
+            channel_cat: int = channel_cat_maybe
             
             entity_base_name: str | None = channel_info_dict.get("entity_base_name")
             desired_name: str = entity_base_name if entity_base_name is not None else f"Channel {channel_id}"
 
-            # Create a stable base name for entity IDs (slugified version of entity_base_name)
-            # This will be used to generate consistent entity IDs regardless of friendly name changes
             entity_base_slug = desired_name.lower().replace(' ', '_').replace('-', '_').replace('.', '_').replace(':', '_')
-            # Remove any double underscores and strip leading/trailing underscores
             entity_base_slug = '_'.join(filter(None, entity_base_slug.split('_')))
 
-            _LOGGER.debug(f"Channel {channel_id} (Cat: {channel_cat}). Type is cover. Using Name: '{desired_name}'. Entity base slug: '{entity_base_slug}'. Creating entity.")
+            _LOGGER.debug("Channel %s (Cat: %s). Type is cover. Using Name: '%s'. Entity base slug: '%s'. Creating entity.",
+                          channel_id, channel_cat, desired_name, entity_base_slug)
             
-            # Type hub_manufacturer and hub_sw_version before use
             hub_manufacturer: str = main_hub_device_info.get("manufacturer", "Feller AG")
             hub_sw_version: str | None = main_hub_device_info.get("sw_version")
 
             blind_device_info: dict[str, Any] = {
-                "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")}, # set[tuple[str,str]]
+                "identifiers": {(DOMAIN, f"{hub_serial_for_blinds}_ch{channel_id}")},
                 "name": desired_name, 
-                "via_device": (DOMAIN, hub_serial_for_blinds), # tuple[str,str]
-                "manufacturer": hub_manufacturer, # str
-                "sw_version": hub_sw_version, # str | None
+                "via_device": (DOMAIN, hub_serial_for_blinds),
+                "manufacturer": hub_manufacturer,
+                "sw_version": hub_sw_version,
             }
             panel_type_string: str = panel_type_mapping.get(channel_cat, "Unknown Panel")
-            blind_device_info["model"] = f"Zeptrion Air Channel {channel_id} - {panel_type_string}" # str
+            blind_device_info["model"] = f"Zeptrion Air Channel {channel_id} - {panel_type_string}"
 
             new_entities.append(
                 ZeptrionAirBlind(
-                        config_entry=entry, 
-                        device_info_for_blind_entity=blind_device_info,
-                        channel_id=channel_id, # int
-                        hub_serial=hub_serial_for_blinds, # str
-                        entry_title=hub_entry_title, # str
-                        entity_base_slug=entity_base_slug
-                    )
+                    config_entry=entry, 
+                    device_info_for_blind_entity=blind_device_info,
+                    channel_id=channel_id,
+                    hub_serial=hub_serial_for_blinds,
+                    entry_title=hub_entry_title,
+                    entity_base_slug=entity_base_slug
                 )
+            )
     
     if new_entities:
-        for entity in new_entities: # entity is ZeptrionAirBlind
-            _LOGGER.debug(
-                "Preparing to add cover entity: Name: %s, Unique ID: %s",
-                entity.name,
-                entity.unique_id
-            )
+        for entity in new_entities:
+            _LOGGER.debug("Preparing to add cover entity: Name: %s, Unique ID: %s",
+                          entity.name, entity.unique_id)
         _LOGGER.info("Adding %s ZeptrionAirBlind cover entities.", len(new_entities))
         async_add_entities(new_entities)
     else:
@@ -148,7 +142,6 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_device_info: dict[str, Any] = device_info_for_blind_entity
         
         name_val = device_info_for_blind_entity.get("name")
-        #self._attr_has_entity_name = True
         self._attr_name: str = str(name_val) if name_val is not None else f"Channel {channel_id}"
         self._attr_unique_id = f"zapp_{hub_serial}_ch{self._channel_id}"
         
@@ -176,9 +169,6 @@ class ZeptrionAirBlind(CoverEntity):
     @property
     def is_closed(self) -> bool | None:
         """Return if the cover is closed or position is unknown."""
-        # Since we don't know the actual state, always return None if position is unknown
-        # Or, if we want to be optimistic after a 'close' command, this would change.
-        # For now, following the "no reliable position feedback" principle.
         return self._attr_is_closed 
 
     @property
@@ -194,7 +184,6 @@ class ZeptrionAirBlind(CoverEntity):
     @property
     def current_cover_position(self) -> int | None:
         """Return current position of cover. None if unknown."""
-        # Zeptrion blinds do not report position.
         return self._attr_current_cover_position
 
     async def async_open_cover(self) -> None:
@@ -203,11 +192,6 @@ class ZeptrionAirBlind(CoverEntity):
         try:
             await self.config_entry.runtime_data.client.async_channel_open(self._channel_id)
             self._commanded_action = "opening"
-            # Optimistic updates (optional, as per instructions)
-            # self._attr_is_opening = True
-            # self._attr_is_closing = False
-            # self._attr_is_closed = False
-            # self.async_write_ha_state()
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while opening blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
@@ -221,11 +205,6 @@ class ZeptrionAirBlind(CoverEntity):
         try:
             await self.config_entry.runtime_data.client.async_channel_close(self._channel_id)
             self._commanded_action = "closing"
-            # Optimistic updates (optional)
-            # self._attr_is_closing = True
-            # self._attr_is_opening = False
-            # self._attr_is_closed = False # Assuming it's not fully closed yet
-            # self.async_write_ha_state()
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while closing blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
@@ -239,10 +218,6 @@ class ZeptrionAirBlind(CoverEntity):
         try:
             await self.config_entry.runtime_data.client.async_channel_stop(self._channel_id)
             self._commanded_action = "stop"
-            # Optimistic updates (optional)
-            # self._attr_is_opening = False
-            # self._attr_is_closing = False
-            # self.async_write_ha_state()
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
@@ -257,7 +232,6 @@ class ZeptrionAirBlind(CoverEntity):
         try:
             await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
             self._commanded_action = "opening"
-            # No optimistic state updates for tilt for now, similar to open/close.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
@@ -272,34 +246,12 @@ class ZeptrionAirBlind(CoverEntity):
         try:
             await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
             self._commanded_action = "closing"
-            # No optimistic state updates for tilt for now.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
         except Exception as e:
             _LOGGER.error("Unexpected error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-
-    # No async_update method as the device does not provide reliable position feedback.
-    # State updates would be optimistic if implemented in open/close/stop.
-    # Or, a periodic poll of /zrap/chscan could be done, but it only returns -1 for blinds.
-    # If we were to use optimistic state:
-    # After async_open_cover: self._attr_is_closed = False
-    # After async_close_cover: Once movement is assumed complete: self._attr_is_closed = True
-    # However, without knowing duration, this is tricky.
-    # Keeping it simple as per "no reliable position feedback".
-    # `is_closed` will remain None if `current_cover_position` is None.
-    # If we want to strictly adhere to CoverEntity:
-    # `is_closed` should be True if position is 0, False if > 0, None if position is None.
-    # Let's assume for now:
-    # - Commands are fire-and-forget.
-    # - `is_closed` and `current_cover_position` remain `None` as their true state is unknown.
-    # This matches the API's limitation where `/zrap/chscan` returns -1 (unknown) for blinds.
-    # If an optimistic state is desired, `is_closed` would be set after a presumed duration
-    # or immediately (e.g., `self._attr_is_closed = False` on open, `True` on close after delay).
-    # For now, the properties will just return their initialized values.
-    # The current implementation of `is_closed` returning `self._attr_is_closed` (which is init to None)
-    # correctly reflects the unknown state.
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -316,22 +268,22 @@ class ZeptrionAirBlind(CoverEntity):
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S1,
                 {},
-                self.async_blind_recall_s1.__name__ # "async_blind_recall_s1"
+                self.async_blind_recall_s1.__name__
             )
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S2,
                 {},
-                self.async_blind_recall_s2.__name__ # "async_blind_recall_s2"
+                self.async_blind_recall_s2.__name__
             )
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S3,
                 {},
-                self.async_blind_recall_s3.__name__ # "async_blind_recall_s3"
+                self.async_blind_recall_s3.__name__
             )
             platform.async_register_entity_service(
                 SERVICE_BLIND_RECALL_S4,
                 {},
-                self.async_blind_recall_s4.__name__ 
+                self.async_blind_recall_s4.__name__
             )
         else:
             _LOGGER.warning("Entity platform not available for %s, services not registered.", self.entity_id)
@@ -344,17 +296,13 @@ class ZeptrionAirBlind(CoverEntity):
             try:
                 processed_value = int(raw_value)
             except (ValueError, TypeError) as e:
-                _LOGGER.error(f"Could not convert 'value' ({raw_value}) to int for {self._attr_name}: {e}")
+                _LOGGER.error("Could not convert 'value' (%s) to int for %s: %s", raw_value, self._attr_name, e)
                 return
 
-            _LOGGER.debug(
-                f"Handling WS for {self._attr_name}: val={processed_value}, "
-                f"cmd_action={self._commanded_action}, active_action={self._active_action}, is_closed={self._attr_is_closed}"
-            )
-            # _LOGGER.debug(f"Event data: {message_data}") # Removed as per subtask, event data can be large
+            _LOGGER.debug("Handling WS for %s: val=%s, cmd_action=%s, active_action=%s, is_closed=%s",
+                          self._attr_name, processed_value, self._commanded_action, self._active_action, self._attr_is_closed)
 
             old_active_action = self._active_action
-            # Store initial states for comparison after all logic for this event value has run
             initial_is_opening = self._attr_is_opening
             initial_is_closing = self._attr_is_closing
             initial_is_closed = self._attr_is_closed
@@ -365,17 +313,14 @@ class ZeptrionAirBlind(CoverEntity):
                 elif self._commanded_action == "closing":
                     self._active_action = "closing"
                 else:
-                    # Warning is kept, specific debug logs about intention removed
-                    _LOGGER.warning(
-                        f"Blind {self._attr_name} received val=100 (movement started) "
-                        f"but current commanded_action is '{self._commanded_action}'. "
-                        f"_active_action will remain '{self._active_action}'. This may indicate a desync or delayed message."
-                    )
+                    _LOGGER.warning("Blind %s received val=100 (movement started) but current commanded_action is '%s'. "
+                                    "_active_action will remain '%s'. This may indicate a desync or delayed message.",
+                                    self._attr_name, self._commanded_action, self._active_action)
 
                 if old_active_action != self._active_action:
-                    _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
+                    _LOGGER.debug("Changed _active_action from '%s' to '%s' for %s", 
+                                  old_active_action, self._active_action, self._attr_name)
 
-                # Attribute updates based on the determined self._active_action
                 if self._active_action == "opening":
                     self._attr_is_opening = True
                     self._attr_is_closing = False
@@ -383,7 +328,6 @@ class ZeptrionAirBlind(CoverEntity):
                 elif self._active_action == "closing":
                     self._attr_is_closing = True
                     self._attr_is_opening = False
-                    # Do NOT set self._attr_is_closed = True here
                 else:
                     self._attr_is_opening = False
                     self._attr_is_closing = False
@@ -396,32 +340,25 @@ class ZeptrionAirBlind(CoverEntity):
 
                 self._attr_is_opening = False
                 self._attr_is_closing = False
-                self._active_action = None # Reset active_action as movement stopped
-
-            # Log changes to attributes compared to their state at the beginning of the specific 100 or 0 block processing
-            # This requires capturing them before the if/elif for processed_value
-            # The existing logic captures current_is_opening etc. *inside* the blocks.
-            # For simplification, we'll compare with initial_is_opening etc. captured before the main if/elif.
-            # This means logs will show the net change after this event.
+                self._active_action = None
 
             if initial_is_opening != self._attr_is_opening:
-                _LOGGER.debug(f"Changed _attr_is_opening from {initial_is_opening} to {self._attr_is_opening} for {self._attr_name}")
+                _LOGGER.debug("Changed _attr_is_opening from %s to %s for %s", 
+                              initial_is_opening, self._attr_is_opening, self._attr_name)
             if initial_is_closing != self._attr_is_closing:
-                _LOGGER.debug(f"Changed _attr_is_closing from {initial_is_closing} to {self._attr_is_closing} for {self._attr_name}")
+                _LOGGER.debug("Changed _attr_is_closing from %s to %s for %s", 
+                              initial_is_closing, self._attr_is_closing, self._attr_name)
             if initial_is_closed != self._attr_is_closed:
-                _LOGGER.debug(f"Changed _attr_is_closed from {initial_is_closed} to {self._attr_is_closed} for {self._attr_name}")
+                _LOGGER.debug("Changed _attr_is_closed from %s to %s for %s", 
+                              initial_is_closed, self._attr_is_closed, self._attr_name)
 
-            # Log change for _active_action if it happened in the processed_value == 0 block
-            # (already logged if it changed in processed_value == 100 block)
             if processed_value == 0 and old_active_action != self._active_action:
-                 _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
+                 _LOGGER.debug("Changed _active_action from '%s' to '%s' for %s", 
+                               old_active_action, self._active_action, self._attr_name)
 
-
-            _LOGGER.debug(
-                f"Finished WS for {self._attr_name}: cmd_action={self._commanded_action}, "
-                f"active_action={self._active_action}, is_closed={self._attr_is_closed}, "
-                f"is_opening={self._attr_is_opening}, is_closing={self._attr_is_closing}"
-            )
+            _LOGGER.debug("Finished WS for %s: cmd_action=%s, active_action=%s, is_closed=%s, is_opening=%s, is_closing=%s",
+                          self._attr_name, self._commanded_action, self._active_action, self._attr_is_closed, 
+                          self._attr_is_opening, self._attr_is_closing)
             self.async_write_ha_state()
 
     async def async_blind_recall_s1(self) -> None:
@@ -471,4 +408,3 @@ class ZeptrionAirBlind(CoverEntity):
         except Exception as e:
             _LOGGER.error("Unexpected error while recalling S4 for blind %s (Channel %s): %s", self.name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to recall S4 for blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
-

@@ -2,6 +2,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.lovelace import dashboard
 from homeassistant.helpers.event import async_call_later
+from homeassistant.util import executor
 from aiohttp import web
 import os
 import logging
@@ -21,9 +22,17 @@ class ZeptrionAirCardView(HomeAssistantView):
         
         if not os.path.exists(card_path):
             return web.Response(status=404)
-            
-        with open(card_path, 'r') as f:
-            content = f.read()
+        
+        def _read_file():
+            """Read file in executor."""
+            with open(card_path, 'r') as f:
+                return f.read()
+        
+        try:
+            content = await request.app["hass"].async_add_executor_job(_read_file)
+        except Exception as e:
+            _LOGGER.error("Error reading card file: %s", e)
+            return web.Response(status=500)
             
         return web.Response(
             text=content,
@@ -53,9 +62,11 @@ async def async_setup_frontend(hass, entry):
         # Try to register with Lovelace resources
         try:
             if "lovelace" in hass.data:
-                lovelace_config = hass.data["lovelace"]
-                if "resources" in lovelace_config:
-                    resources = lovelace_config["resources"]
+                lovelace_data = hass.data["lovelace"]
+                
+                # Use attribute access instead of dictionary access
+                if hasattr(lovelace_data, "resources"):
+                    resources = lovelace_data.resources
                     
                     # Check if our resource is already there
                     resource_url = "/api/zeptrion_air/zeptrion-air-blinds-card.js"

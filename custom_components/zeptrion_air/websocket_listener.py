@@ -18,20 +18,17 @@ class ZeptrionAirWebsocketListener:
         self._ws_url = f"ws://{self._hostname}/zrap/ws"
         _LOGGER.debug(f"[{self._hostname}] ZeptrionAirWebsocketListener instance created for {self._hostname}")
 
-    async def _connect(self): # Ensure this method sets self._websocket to None on any failure
+    async def _connect(self):
+        """Connect to websocket and return success status."""
         _LOGGER.debug(f"[{self._hostname}] Attempting to connect to websocket at {self._ws_url}...")
         try:
-            # Close existing connection if any before creating a new one
             if self._websocket:
                 _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
-                await self._close_websocket() # Ensure this sets self._websocket = None
+                await self._close_websocket()
 
-            self._websocket = await websockets.connect(self._ws_url, ping_interval=25, ping_timeout=20) # Added keepalive params
+            self._websocket = await websockets.connect(self._ws_url, ping_interval=25, ping_timeout=20)
             _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
-            # self._is_running should primarily be managed by start/stop,
-            # but we can confirm it's true if connect succeeds and we intend to run.
-            # For robustness, let start() be the authority on _is_running intent.
-            return True # Indicate success
+            return True
         except ConnectionRefusedError:
             _LOGGER.error(f"[{self._hostname}] Websocket connection refused for {self._ws_url}.")
         except websockets.exceptions.InvalidURI:
@@ -41,13 +38,13 @@ class ZeptrionAirWebsocketListener:
         except Exception as e:
             _LOGGER.error(f"[{self._hostname}] Unexpected error connecting to websocket {self._ws_url}: {type(e).__name__} - {e}")
 
-        # If any exception occurred, ensure cleanup
-        await self._close_websocket() # This will set self._websocket = None
-        return False # Indicate failure
+        await self._close_websocket()
+        return False
 
     async def listen(self):
+        """Main websocket listener loop with reconnection logic."""
         _LOGGER.info(f"[{self._hostname}] Main websocket listener loop started. self._is_running = {self._is_running}")
-        backoff_time = 5  # Initial backoff time in seconds
+        backoff_time = 5
         max_backoff_time = 60
 
         while self._is_running:
@@ -55,12 +52,12 @@ class ZeptrionAirWebsocketListener:
 
             if connection_successful and self._websocket:
                 _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
-                backoff_time = 5  # Reset backoff time on successful connection
+                backoff_time = 5
 
                 try:
-                    while self._is_running and self._websocket: # Check self._websocket here as well
+                    while self._is_running and self._websocket:
                         try:
-                            message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=60.0) # Increased timeout slightly
+                            message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=60.0)
                             status_time = time.time()
                             _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
                             decoded_message = self._decode_message(message_raw, status_time)
@@ -72,7 +69,7 @@ class ZeptrionAirWebsocketListener:
                                         decoded_message
                                     )
 
-                        except asyncio.TimeoutError:  # Timeout on recv()
+                        except asyncio.TimeoutError:
                             _LOGGER.debug(f"[{self._hostname}] Websocket recv timed out. Checking connection with a ping.")
                             try:
                                 pong_waiter = await self._websocket.ping()
@@ -86,12 +83,12 @@ class ZeptrionAirWebsocketListener:
                         except websockets.exceptions.ConnectionClosed as e:
                             _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
                             await self._close_websocket()
-                            break  # Break inner message loop to trigger reconnection logic
+                            break
 
                         except Exception as e:
                             _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
                             await self._close_websocket()
-                            break  # Break inner message loop
+                            break
 
                     if not self._is_running:
                         _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
@@ -110,9 +107,10 @@ class ZeptrionAirWebsocketListener:
                  _LOGGER.info(f"[{self._hostname}] Stop requested. Exiting main listener loop.")
 
         _LOGGER.info(f"[{self._hostname}] Websocket listener has fully stopped.")
-        await self._close_websocket() # Final cleanup
+        await self._close_websocket()
 
     def _decode_message(self, message_raw: str, status_time: float) -> dict | None:
+        """Decode websocket message and return structured data."""
         try:
             message_json = json.loads(message_raw)
         except json.JSONDecodeError:
@@ -157,19 +155,21 @@ class ZeptrionAirWebsocketListener:
             return None
 
     async def start(self):
+        """Start the websocket listener."""
         _LOGGER.debug(f"[{self._hostname}] ZeptrionAirWebsocketListener start() called.")
         if not self._task or self._task.done():
-            self._is_running = True # Signal that we want it to run
+            self._is_running = True
             _LOGGER.info(f"[{self._hostname}] Creating and starting websocket listener task.")
-            await self._close_websocket() # Ensure any old connection is closed before starting a new task.
+            await self._close_websocket()
             self._task = self._hass.loop.create_task(self.listen())
             _LOGGER.debug(f"[{self._hostname}] Websocket listener task created.")
         else:
             _LOGGER.debug(f"[{self._hostname}] Websocket listener task already running or not yet done.")
 
     async def stop(self):
+        """Stop the websocket listener."""
         _LOGGER.debug(f"[{self._hostname}] ZeptrionAirWebsocketListener stop() called.")
-        self._is_running = False  # Signal the listen loop to stop
+        self._is_running = False
 
         if self._task and not self._task.done():
             _LOGGER.info(f"[{self._hostname}] Cancelling listener task.")
@@ -183,17 +183,18 @@ class ZeptrionAirWebsocketListener:
         else:
             _LOGGER.debug(f"[{self._hostname}] Listener task was not running or already done.")
 
-        await self._close_websocket() # Ensure websocket is closed
-        self._task = None # Clear the task reference
+        await self._close_websocket()
+        self._task = None
         _LOGGER.info(f"[{self._hostname}] Websocket listener fully stopped and cleaned up.")
 
     async def _close_websocket(self):
+        """Close websocket connection and cleanup."""
         _LOGGER.debug(f"[{self._hostname}] _close_websocket() called. Current state: _websocket is {'set' if self._websocket else 'None'}")
         if self._websocket:
             try:
                 await self._websocket.close()
                 _LOGGER.debug(f"[{self._hostname}] Websocket connection actually closed.")
-            except Exception as e: # Catch a broader range of potential errors during close
+            except Exception as e:
                 _LOGGER.error(f"[{self._hostname}] Error closing websocket: {type(e).__name__} - {e}")
             finally:
                 self._websocket = None

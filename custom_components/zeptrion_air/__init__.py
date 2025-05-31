@@ -136,27 +136,16 @@ async def async_setup_entry(
         **hub_device_info 
     )
 
-    # ---- WebSocket Listener Setup ----
-    LOGGER.debug(f"[{hostname}] Preparing to initialize WebSocket listener.") # CORRECTED _LOGGER to LOGGER
-    # Ensure runtime_data is ZeptrionAirData before proceeding
     current_runtime_data = entry.runtime_data
     if isinstance(current_runtime_data, ZeptrionAirData):
-        LOGGER.debug(f"[{hostname}] Initializing WebSocket listener object.") # MODIFIED (already LOGGER, correct)
         websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass)
-        LOGGER.debug(f"[{hostname}] WebSocket listener instance created.") # CORRECTED _LOGGER to LOGGER
-
-        LOGGER.debug(f"[{hostname}] Attempting to start WebSocket listener.") # CORRECTED _LOGGER to LOGGER
-        await websocket_listener.start() # Start the listener
-        LOGGER.debug(f"[{hostname}] WebSocket listener start() method called.") # CORRECTED _LOGGER to LOGGER
+        await websocket_listener.start()
 
         current_runtime_data.websocket_listener = websocket_listener
-        LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.") # CORRECT (already LOGGER)
-        LOGGER.debug(f"[{hostname}] WebSocket listener stored in runtime_data.") # CORRECTED _LOGGER to LOGGER
+        LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
     else:
-        LOGGER.error(f"[{hostname}] runtime_data is not correctly initialized as ZeptrionAirData. Cannot setup or store websocket_listener.") # CORRECT (already LOGGER)
-        # If websocket_listener was created, try to stop it.
         if 'websocket_listener' in locals() and websocket_listener:
-            LOGGER.debug(f"[{hostname}] Attempting to stop websocket listener due to runtime_data issue.") # CORRECTED _LOGGER to LOGGER
+            LOGGER.debug(f"[{hostname}] Attempting to stop websocket listener due to runtime_data issue.")
             await websocket_listener.stop()
         # Depending on criticality, could return False or raise an error.
         # For now, we log the error and proceed without WS, as core functionality might still work.
@@ -260,7 +249,7 @@ async def async_setup_entry(
         "identified_channels": identified_channels, 
         "entry_title": hub_name, 
         "hub_serial": serial_number, 
-        "coordinator": coordinator # coordinator is already initialized
+        "coordinator": coordinator
     }
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = platform_setup_data
     
@@ -290,14 +279,14 @@ async def async_unload_entry(
     if entry.runtime_data and isinstance(entry.runtime_data, ZeptrionAirData) and entry.runtime_data.websocket_listener:
         LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Unloading: Stopping websocket listener.")
         await entry.runtime_data.websocket_listener.stop()
-        entry.runtime_data.websocket_listener = None # Clear it after stopping
+        entry.runtime_data.websocket_listener = None
 
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
     if unload_ok:
         if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
             hass.data[DOMAIN].pop(entry.entry_id)
         # Ensure runtime_data is cleared, especially if it was ZeptrionAirData
-        if hasattr(entry, 'runtime_data') and entry.runtime_data is not None: # Check if it exists before trying to type check or clear
+        if hasattr(entry, 'runtime_data') and entry.runtime_data is not None:
             if isinstance(entry.runtime_data, ZeptrionAirData):
                 LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Clearing ZeptrionAirData from entry.runtime_data.")
             else:
