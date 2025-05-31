@@ -152,8 +152,8 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_device_class = CoverDeviceClass.SHUTTER
         
         self._attr_is_closed: bool | None = None
-        self._attr_is_opening: bool | None = None
-        self._attr_is_closing: bool | None = None
+        self._attr_is_opening: bool = False
+        self._attr_is_closing: bool = False
         self._attr_current_cover_position: int | None = None
         self._commanded_action: str | None = None
         self._active_action: str | None = None
@@ -169,7 +169,11 @@ class ZeptrionAirBlind(CoverEntity):
     @property
     def is_closed(self) -> bool | None:
         """Return if the cover is closed or position is unknown."""
-        return self._attr_is_closed 
+        # this is unreliable as we don't know the real position. it can be influenced by
+        # hardware button presses and scenes, so we always return None to avoid buttons
+        # being disabled automatically by HA based on the Cover state
+        #return self._attr_is_closed
+        return None
 
     @property
     def is_opening(self) -> bool:
@@ -189,49 +193,55 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_open_cover(self) -> None:
         """Open the cover."""
         _LOGGER.debug("Opening blind %s (Channel %s)", self._attr_name, self._channel_id)
+        self._commanded_action = "opening"
         try:
             await self.config_entry.runtime_data.client.async_channel_open(self._channel_id)
-            self._commanded_action = "opening"
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            self._commanded_action = None
             _LOGGER.error("API error while opening blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
         except Exception as e:
+            self._commanded_action = None
             _LOGGER.error("Unexpected error while opening blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to open blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
     async def async_close_cover(self) -> None:
         """Close the cover."""
         _LOGGER.debug("Closing blind %s (Channel %s)", self._attr_name, self._channel_id)
+        self._commanded_action = "closing"
         try:
             await self.config_entry.runtime_data.client.async_channel_close(self._channel_id)
-            self._commanded_action = "closing"
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            self._commanded_action = None
             _LOGGER.error("API error while closing blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
         except Exception as e:
+            self._commanded_action = None
             _LOGGER.error("Unexpected error while closing blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
     async def async_stop_cover(self) -> None:
         """Stop the cover movement."""
         _LOGGER.debug("Stopping blind %s (Channel %s)", self._attr_name, self._channel_id)
+        self._commanded_action = "stop"
         try:
             await self.config_entry.runtime_data.client.async_channel_stop(self._channel_id)
-            self._commanded_action = "stop"
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            self._commanded_action = None
             _LOGGER.error("API error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
         except Exception as e:
+            self._commanded_action = None
             _LOGGER.error("Unexpected error while stopping blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to stop blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
     async def async_open_cover_tilt(self) -> None:
         """Tilt the cover open."""
         _LOGGER.debug("Tilting open blind %s (Channel %s)", self._attr_name, self._channel_id)
-        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+        self._commanded_action = "tilt_opening"
         try:
-            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
-            self._commanded_action = "opening"
+            step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt open blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
@@ -242,14 +252,16 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_close_cover_tilt(self) -> None:
         """Tilt the cover closed."""
         _LOGGER.debug("Tilting close blind %s (Channel %s)", self._attr_name, self._channel_id)
-        step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+        self._commanded_action = "tilt_closing"
         try:
-            await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
-            self._commanded_action = "closing"
+            step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
+            self._commanded_action = None
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An API error occurred. {e}") from e
         except Exception as e:
+            self._commanded_action = None
             _LOGGER.error("Unexpected error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
             raise HomeAssistantError(f"Failed to tilt close blind {self.name} (Channel {self._channel_id}): An unexpected error occurred. {e}") from e
 
@@ -292,47 +304,36 @@ class ZeptrionAirBlind(CoverEntity):
         """Handle websocket messages for the blind."""
         message_data = event.data
         if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
-            raw_value = message_data.get("value")
-            try:
-                processed_value = int(raw_value)
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Could not convert 'value' (%s) to int for %s: %s", raw_value, self._attr_name, e)
-                return
+            message_value = message_data.get("value")
 
             _LOGGER.debug("Handling WS for %s: val=%s, cmd_action=%s, active_action=%s, is_closed=%s",
-                          self._attr_name, processed_value, self._commanded_action, self._active_action, self._attr_is_closed)
+                          self._attr_name, message_value, self._commanded_action, self._active_action, self._attr_is_closed)
 
-            old_active_action = self._active_action
-            initial_is_opening = self._attr_is_opening
-            initial_is_closing = self._attr_is_closing
-            initial_is_closed = self._attr_is_closed
-
-            if processed_value == 100:  # Action is running
-                if self._commanded_action == "opening":
+            if message_value == 100:  # Action is running
+                if self._commanded_action == "opening" or self._commanded_action == "tilt_opening":
                     self._active_action = "opening"
-                elif self._commanded_action == "closing":
+                elif self._commanded_action == "closing" or self._commanded_action == "tilt_closing":
                     self._active_action = "closing"
                 else:
                     _LOGGER.warning("Blind %s received val=100 (movement started) but current commanded_action is '%s'. "
                                     "_active_action will remain '%s'. This may indicate a desync or delayed message.",
                                     self._attr_name, self._commanded_action, self._active_action)
 
-                if old_active_action != self._active_action:
-                    _LOGGER.debug("Changed _active_action from '%s' to '%s' for %s", 
-                                  old_active_action, self._active_action, self._attr_name)
-
                 if self._active_action == "opening":
                     self._attr_is_opening = True
                     self._attr_is_closing = False
-                    self._attr_is_closed = False
+                    self._attr_is_closed = None
                 elif self._active_action == "closing":
                     self._attr_is_closing = True
                     self._attr_is_opening = False
+                    self._attr_is_closed = None
                 else:
                     self._attr_is_opening = False
                     self._attr_is_closing = False
 
             elif processed_value == 0:  # Action stopped
+                # this is unreliable as we don't know the real position. it can be influenced by
+                # hardware button presses and scenes
                 if self._active_action == "opening":
                     self._attr_is_closed = False
                 elif self._active_action == "closing":
@@ -341,20 +342,9 @@ class ZeptrionAirBlind(CoverEntity):
                 self._attr_is_opening = False
                 self._attr_is_closing = False
                 self._active_action = None
-
-            if initial_is_opening != self._attr_is_opening:
-                _LOGGER.debug("Changed _attr_is_opening from %s to %s for %s", 
-                              initial_is_opening, self._attr_is_opening, self._attr_name)
-            if initial_is_closing != self._attr_is_closing:
-                _LOGGER.debug("Changed _attr_is_closing from %s to %s for %s", 
-                              initial_is_closing, self._attr_is_closing, self._attr_name)
-            if initial_is_closed != self._attr_is_closed:
-                _LOGGER.debug("Changed _attr_is_closed from %s to %s for %s", 
-                              initial_is_closed, self._attr_is_closed, self._attr_name)
-
-            if processed_value == 0 and old_active_action != self._active_action:
-                 _LOGGER.debug("Changed _active_action from '%s' to '%s' for %s", 
-                               old_active_action, self._active_action, self._attr_name)
+                
+            else:
+                return
 
             _LOGGER.debug("Finished WS for %s: cmd_action=%s, active_action=%s, is_closed=%s, is_opening=%s, is_closing=%s",
                           self._attr_name, self._commanded_action, self._active_action, self._attr_is_closed, 
