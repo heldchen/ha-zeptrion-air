@@ -340,52 +340,42 @@ class ZeptrionAirBlind(CoverEntity):
         """Handle websocket messages for the blind."""
         message_data = event.data
         if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
-            _LOGGER.debug(
-                f"Entering async_handle_websocket_message for {self._attr_name} (Channel {self._channel_id}). "
-                f"Current commanded_action: {self._commanded_action}, current active_action: {self._active_action}, "
-                f"current is_closed: {self._attr_is_closed}, is_opening: {self._attr_is_opening}, is_closing: {self._attr_is_closing}"
-            )
-            _LOGGER.debug(f"Event data: {message_data}")
-
-            raw_value = message_data.get("value") # Changed "val" to "value"
-            _LOGGER.debug(f"Raw 'value' from event data: {raw_value} (type: {type(raw_value)})") # Updated log message
-
+            raw_value = message_data.get("value")
             try:
                 processed_value = int(raw_value)
             except (ValueError, TypeError) as e:
-                _LOGGER.error(f"Could not convert 'value' ({raw_value}) to int for {self._attr_name}: {e}") # Updated error log
-                return # Stop processing if value is invalid
+                _LOGGER.error(f"Could not convert 'value' ({raw_value}) to int for {self._attr_name}: {e}")
+                return
+
+            _LOGGER.debug(
+                f"Handling WS for {self._attr_name}: val={processed_value}, "
+                f"cmd_action={self._commanded_action}, active_action={self._active_action}, is_closed={self._attr_is_closed}"
+            )
+            # _LOGGER.debug(f"Event data: {message_data}") # Removed as per subtask, event data can be large
 
             old_active_action = self._active_action
-            # old_is_opening, old_is_closing, old_is_closed are captured at the top of the method.
-            # For logging changes within these specific blocks, we capture current values again.
+            # Store initial states for comparison after all logic for this event value has run
+            initial_is_opening = self._attr_is_opening
+            initial_is_closing = self._attr_is_closing
+            initial_is_closed = self._attr_is_closed
 
             if processed_value == 100:  # Action is running
-                _LOGGER.debug(f"Processing logic for value == 100. Current commanded_action: {self._commanded_action}")
-
                 if self._commanded_action == "opening":
-                    _LOGGER.debug("val=100: Commanded action is 'opening'. Intending to set _active_action to 'opening'.")
                     self._active_action = "opening"
                 elif self._commanded_action == "closing":
-                    _LOGGER.debug("val=100: Commanded action is 'closing'. Intending to set _active_action to 'closing'.")
                     self._active_action = "closing"
                 else:
-                    _LOGGER.debug("val=100: Commanded action is NOT 'opening' or 'closing'. _active_action will not be updated from _commanded_action here.")
+                    # Warning is kept, specific debug logs about intention removed
                     _LOGGER.warning(
                         f"Blind {self._attr_name} received val=100 (movement started) "
                         f"but current commanded_action is '{self._commanded_action}'. "
                         f"_active_action will remain '{self._active_action}'. This may indicate a desync or delayed message."
                     )
-                    # Do NOT change self._active_action in this else block
 
-                if old_active_action != self._active_action: # Log if it changed
-                    _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}'")
+                if old_active_action != self._active_action:
+                    _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
 
-                _LOGGER.debug(f"val=100: Based on _active_action ('{self._active_action}'), now attempting to set operational states (is_opening, is_closing, is_closed).")
-                current_is_opening = self._attr_is_opening
-                current_is_closing = self._attr_is_closing
-                current_is_closed = self._attr_is_closed
-
+                # Attribute updates based on the determined self._active_action
                 if self._active_action == "opening":
                     self._attr_is_opening = True
                     self._attr_is_closing = False
@@ -394,57 +384,43 @@ class ZeptrionAirBlind(CoverEntity):
                     self._attr_is_closing = True
                     self._attr_is_opening = False
                     # Do NOT set self._attr_is_closed = True here
-                else:  # Covers self._active_action being None, "stop", or not updated due to commanded_action being "stop"
+                else:
                     self._attr_is_opening = False
                     self._attr_is_closing = False
-                    # No change to self._attr_is_closed here
-
-                if current_is_opening != self._attr_is_opening:
-                    _LOGGER.debug(f"Changed _attr_is_opening from {current_is_opening} to {self._attr_is_opening}")
-                if current_is_closing != self._attr_is_closing:
-                    _LOGGER.debug(f"Changed _attr_is_closing from {current_is_closing} to {self._attr_is_closing}")
-                if current_is_closed != self._attr_is_closed:
-                    _LOGGER.debug(f"Changed _attr_is_closed from {current_is_closed} to {self._attr_is_closed}")
 
             elif processed_value == 0:  # Action stopped
-                _LOGGER.debug(f"Processing logic for value == 0. Current _active_action: {self._active_action}")
-
-                current_is_closed = self._attr_is_closed
-                _LOGGER.debug(f"val=0: Based on _active_action ('{self._active_action}'), now attempting to set final state for _attr_is_closed.")
                 if self._active_action == "opening":
                     self._attr_is_closed = False
                 elif self._active_action == "closing":
                     self._attr_is_closed = True
 
-                if current_is_closed != self._attr_is_closed:
-                     _LOGGER.debug(f"Changed _attr_is_closed from {current_is_closed} to {self._attr_is_closed}")
-
-                current_is_opening = self._attr_is_opening
                 self._attr_is_opening = False
-                if current_is_opening != self._attr_is_opening:
-                     _LOGGER.debug(f"Changed _attr_is_opening from {current_is_opening} to {self._attr_is_opening}")
-
-                current_is_closing = self._attr_is_closing
                 self._attr_is_closing = False
-                if current_is_closing != self._attr_is_closing:
-                     _LOGGER.debug(f"Changed _attr_is_closing from {current_is_closing} to {self._attr_is_closing}")
+                self._active_action = None # Reset active_action as movement stopped
 
-                prev_active_action_in_zero = self._active_action
-                self._active_action = None
-                if prev_active_action_in_zero != self._active_action:
-                    _LOGGER.debug(f"Changed _active_action from '{prev_active_action_in_zero}' to '{self._active_action}'")
+            # Log changes to attributes compared to their state at the beginning of the specific 100 or 0 block processing
+            # This requires capturing them before the if/elif for processed_value
+            # The existing logic captures current_is_opening etc. *inside* the blocks.
+            # For simplification, we'll compare with initial_is_opening etc. captured before the main if/elif.
+            # This means logs will show the net change after this event.
 
+            if initial_is_opening != self._attr_is_opening:
+                _LOGGER.debug(f"Changed _attr_is_opening from {initial_is_opening} to {self._attr_is_opening} for {self._attr_name}")
+            if initial_is_closing != self._attr_is_closing:
+                _LOGGER.debug(f"Changed _attr_is_closing from {initial_is_closing} to {self._attr_is_closing} for {self._attr_name}")
+            if initial_is_closed != self._attr_is_closed:
+                _LOGGER.debug(f"Changed _attr_is_closed from {initial_is_closed} to {self._attr_is_closed} for {self._attr_name}")
 
-            # Consolidate final attribute change logging here is complex because changes happen in branches.
-            # The individual change logs above are more precise for when each attribute changes.
-            # The old_is_opening etc. captured at the top of the handler can be compared at the end,
-            # but this doesn't show *which* part of the logic (100 or 0) caused the change if multiple could.
-            # The current inline logging of changes is preferred as per prompt.
+            # Log change for _active_action if it happened in the processed_value == 0 block
+            # (already logged if it changed in processed_value == 100 block)
+            if processed_value == 0 and old_active_action != self._active_action:
+                 _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
+
 
             _LOGGER.debug(
-                f"Exiting async_handle_websocket_message for {self._attr_name}. "
-                f"Final commanded_action: {self._commanded_action}, final active_action: {self._active_action}, "
-                f"final is_closed: {self._attr_is_closed}, is_opening: {self._attr_is_opening}, is_closing: {self._attr_is_closing}"
+                f"Finished WS for {self._attr_name}: cmd_action={self._commanded_action}, "
+                f"active_action={self._active_action}, is_closed={self._attr_is_closed}, "
+                f"is_opening={self._attr_is_opening}, is_closing={self._attr_is_closing}"
             )
             self.async_write_ha_state()
 
