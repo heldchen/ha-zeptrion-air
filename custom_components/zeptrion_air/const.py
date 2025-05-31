@@ -9,7 +9,6 @@ from homeassistant.const import Platform
 LOGGER: Logger = getLogger(__package__)
 
 DOMAIN: str = "zeptrion_air"
-ATTRIBUTION: str = ""
 
 CONF_NAME: str ="name"
 CONF_IP_ADDRESS: str = "ip_address"
