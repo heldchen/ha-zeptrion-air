@@ -347,13 +347,13 @@ class ZeptrionAirBlind(CoverEntity):
             )
             _LOGGER.debug(f"Event data: {message_data}")
 
-            raw_value = message_data.get("val")
-            _LOGGER.debug(f"Raw 'val' from websocket: {raw_value} (type: {type(raw_value)})")
+            raw_value = message_data.get("value") # Changed "val" to "value"
+            _LOGGER.debug(f"Raw 'value' from event data: {raw_value} (type: {type(raw_value)})") # Updated log message
 
             try:
                 processed_value = int(raw_value)
             except (ValueError, TypeError) as e:
-                _LOGGER.error(f"Could not convert 'val' ({raw_value}) to int for {self._attr_name}: {e}")
+                _LOGGER.error(f"Could not convert 'value' ({raw_value}) to int for {self._attr_name}: {e}") # Updated error log
                 return # Stop processing if value is invalid
 
             old_active_action = self._active_action
