@@ -347,20 +347,30 @@ class ZeptrionAirBlind(CoverEntity):
             )
             _LOGGER.debug(f"Event data: {message_data}")
 
-            value = message_data.get("val")
+            raw_value = message_data.get("val")
+            _LOGGER.debug(f"Raw 'val' from websocket: {raw_value} (type: {type(raw_value)})")
+
+            try:
+                processed_value = int(raw_value)
+            except (ValueError, TypeError) as e:
+                _LOGGER.error(f"Could not convert 'val' ({raw_value}) to int for {self._attr_name}: {e}")
+                return # Stop processing if value is invalid
 
             old_active_action = self._active_action
-            old_is_opening = self._attr_is_opening
-            old_is_closing = self._attr_is_closing
-            old_is_closed = self._attr_is_closed
+            # old_is_opening, old_is_closing, old_is_closed are captured at the top of the method.
+            # For logging changes within these specific blocks, we capture current values again.
 
-            if value == "100":  # Action is running
-                # old_active_action is already captured above, before the "if value == '100'"
+            if processed_value == 100:  # Action is running
+                _LOGGER.debug(f"Processing logic for value == 100. Current commanded_action: {self._commanded_action}")
+
                 if self._commanded_action == "opening":
+                    _LOGGER.debug("val=100: Commanded action is 'opening'. Intending to set _active_action to 'opening'.")
                     self._active_action = "opening"
                 elif self._commanded_action == "closing":
+                    _LOGGER.debug("val=100: Commanded action is 'closing'. Intending to set _active_action to 'closing'.")
                     self._active_action = "closing"
                 else:
+                    _LOGGER.debug("val=100: Commanded action is NOT 'opening' or 'closing'. _active_action will not be updated from _commanded_action here.")
                     _LOGGER.warning(
                         f"Blind {self._attr_name} received val=100 (movement started) "
                         f"but current commanded_action is '{self._commanded_action}'. "
@@ -371,10 +381,10 @@ class ZeptrionAirBlind(CoverEntity):
                 if old_active_action != self._active_action: # Log if it changed
                     _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}'")
 
-                # Store current states before this block's logic
+                _LOGGER.debug(f"val=100: Based on _active_action ('{self._active_action}'), now attempting to set operational states (is_opening, is_closing, is_closed).")
                 current_is_opening = self._attr_is_opening
                 current_is_closing = self._attr_is_closing
-                current_is_closed = self._attr_is_closed # Specific to this block, distinct from old_is_closed at method start
+                current_is_closed = self._attr_is_closed
 
                 if self._active_action == "opening":
                     self._attr_is_opening = True
@@ -389,7 +399,6 @@ class ZeptrionAirBlind(CoverEntity):
                     self._attr_is_closing = False
                     # No change to self._attr_is_closed here
 
-                # Log changes made within this "100" block
                 if current_is_opening != self._attr_is_opening:
                     _LOGGER.debug(f"Changed _attr_is_opening from {current_is_opening} to {self._attr_is_opening}")
                 if current_is_closing != self._attr_is_closing:
@@ -397,19 +406,19 @@ class ZeptrionAirBlind(CoverEntity):
                 if current_is_closed != self._attr_is_closed:
                     _LOGGER.debug(f"Changed _attr_is_closed from {current_is_closed} to {self._attr_is_closed}")
 
-            elif value == "0":  # Action stopped
-                current_is_closed = self._attr_is_closed # Store before potential change by active_action
+            elif processed_value == 0:  # Action stopped
+                _LOGGER.debug(f"Processing logic for value == 0. Current _active_action: {self._active_action}")
 
+                current_is_closed = self._attr_is_closed
+                _LOGGER.debug(f"val=0: Based on _active_action ('{self._active_action}'), now attempting to set final state for _attr_is_closed.")
                 if self._active_action == "opening":
                     self._attr_is_closed = False
                 elif self._active_action == "closing":
                     self._attr_is_closed = True
-                # If self._active_action was "stop" or None, _attr_is_closed is not changed by this message.
 
                 if current_is_closed != self._attr_is_closed:
                      _LOGGER.debug(f"Changed _attr_is_closed from {current_is_closed} to {self._attr_is_closed}")
 
-                # Now set opening/closing states and active_action
                 current_is_opening = self._attr_is_opening
                 self._attr_is_opening = False
                 if current_is_opening != self._attr_is_opening:
@@ -420,10 +429,9 @@ class ZeptrionAirBlind(CoverEntity):
                 if current_is_closing != self._attr_is_closing:
                      _LOGGER.debug(f"Changed _attr_is_closing from {current_is_closing} to {self._attr_is_closing}")
 
-                # Update active_action last in "0" block
-                prev_active_action_in_zero = self._active_action # Store before setting to None
+                prev_active_action_in_zero = self._active_action
                 self._active_action = None
-                if prev_active_action_in_zero != self._active_action: # Will log if it was not None
+                if prev_active_action_in_zero != self._active_action:
                     _LOGGER.debug(f"Changed _active_action from '{prev_active_action_in_zero}' to '{self._active_action}'")
 
 
