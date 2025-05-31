@@ -162,7 +162,8 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_is_opening: bool | None = None
         self._attr_is_closing: bool | None = None
         self._attr_current_cover_position: int | None = None
-        self._last_action: str | None = None
+        self._commanded_action: str | None = None
+        self._active_action: str | None = None
 
         self._attr_supported_features: CoverEntityFeature = (
             CoverEntityFeature.OPEN |
@@ -201,7 +202,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Opening blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_open(self._channel_id)
-            self._last_action = "opening"
+            self._commanded_action = "opening"
             # Optimistic updates (optional, as per instructions)
             # self._attr_is_opening = True
             # self._attr_is_closing = False
@@ -219,7 +220,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Closing blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_close(self._channel_id)
-            self._last_action = "closing"
+            self._commanded_action = "closing"
             # Optimistic updates (optional)
             # self._attr_is_closing = True
             # self._attr_is_opening = False
@@ -237,7 +238,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Stopping blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_stop(self._channel_id)
-            self._last_action = "stop"
+            self._commanded_action = "stop"
             # Optimistic updates (optional)
             # self._attr_is_opening = False
             # self._attr_is_closing = False
@@ -255,7 +256,7 @@ class ZeptrionAirBlind(CoverEntity):
         step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
             await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
-            self._last_action = "opening"
+            self._commanded_action = "opening"
             # No optimistic state updates for tilt for now, similar to open/close.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -270,7 +271,7 @@ class ZeptrionAirBlind(CoverEntity):
         step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
             await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
-            self._last_action = "closing"
+            self._commanded_action = "closing"
             # No optimistic state updates for tilt for now.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -341,33 +342,42 @@ class ZeptrionAirBlind(CoverEntity):
         if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
             value = message_data.get("val")
             _LOGGER.debug(
-                "Blind %s (Channel %s) received eid1 WS message: %s, last_action: %s",
-                self._attr_name,
+                "Blind %s (Channel %s) received eid1 WS message: %s, commanded_action: %s, active_action: %s",
+                self._attr_name, # Corrected from self.name to self._attr_name for consistency
                 self._channel_id,
                 message_data,
-                self._last_action
+                self._commanded_action,
+                self._active_action
             )
 
             if value == "100":  # Action is running
-                if self._last_action == "opening":
+                self._active_action = self._commanded_action
+                if self._active_action == "opening":
                     self._attr_is_opening = True
                     self._attr_is_closing = False
-                elif self._last_action == "closing":
+                    self._attr_is_closed = False
+                elif self._active_action == "closing":
                     self._attr_is_closing = True
                     self._attr_is_opening = False
-                # self._attr_is_closed is not set to False here, wait for stop.
+                    # Do NOT set self._attr_is_closed = True here
+                elif self._active_action == "stop":
+                    self._attr_is_opening = False
+                    self._attr_is_closing = False
+                    # self._attr_is_closed remains as is
+                else: # Covers None or unexpected values for self._active_action
+                    self._attr_is_opening = False
+                    self._attr_is_closing = False
+
             elif value == "0":  # Action stopped
+                if self._active_action == "opening":
+                    self._attr_is_closed = False
+                elif self._active_action == "closing":
+                    self._attr_is_closed = True
+                # If self._active_action was "stop" or None, _attr_is_closed is not changed by this message.
+
                 self._attr_is_opening = False
                 self._attr_is_closing = False
-                if self._last_action == "opening": # Stopped after opening
-                    self._attr_is_closed = False
-                elif self._last_action == "closing": # Stopped after closing
-                    self._attr_is_closed = True
-                # If last_action was 'stop', or something else, is_closed state determined by previous state.
-                # This specific logic for stop -> is_closed needs to be robust if stop can occur from any state.
-                # For now, if last_action was "stop", is_closed remains as it was.
-                # If stop was pressed while it was neither opening nor closing (e.g. already stopped),
-                # then is_closed should not change.
+                self._active_action = None
 
             self.async_write_ha_state()
 
