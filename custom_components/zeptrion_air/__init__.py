@@ -17,6 +17,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_loaded_integration, Integration
 from homeassistant.helpers import device_registry
+from homeassistant.helpers.event import async_track_time_interval
+from datetime import timedelta
 
 from .api import (
     ZeptrionAirApiClient,
@@ -25,7 +27,7 @@ from .api import (
 )
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from .data import ZeptrionAirData
-from .websocket_listener import ZeptrionAirWebsocketListener # ADDED WS LISTENER IMPORT
+from .websocket_listener import ZeptrionAirWebsocketListener
 
 from .frontend import async_setup_frontend
 
@@ -143,10 +145,36 @@ async def async_setup_entry(
 
         current_runtime_data.websocket_listener = websocket_listener
         LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
+
+        # Define and schedule the watchdog
+        async def async_websocket_watchdog(now=None):
+            """Check the websocket listener and restart if necessary."""
+            LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
+            if not websocket_listener.is_alive():
+                LOGGER.warning(f"[{hostname}] Watchdog: WebSocket listener found inactive. Attempting restart.")
+                try:
+                    await websocket_listener.start()
+                    LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
+                except Exception as e:
+                    LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
+            else:
+                LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
+
+        # Schedule the watchdog to run every 5 minutes
+        cancel_watchdog_callback = async_track_time_interval(
+            hass,
+            async_websocket_watchdog,
+            timedelta(minutes=5)
+        )
+        current_runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
+        LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
+
     else:
+        # If websocket_listener was somehow initialized before this check failed, ensure it's stopped.
         if 'websocket_listener' in locals() and websocket_listener:
-            LOGGER.debug(f"[{hostname}] Attempting to stop websocket listener due to runtime_data issue.")
+            LOGGER.warning(f"[{hostname}] Runtime data is not ZeptrionAirData instance. Stopping websocket listener if active.")
             await websocket_listener.stop()
+        LOGGER.error(f"[{hostname}] Cannot start WebSocket listener or watchdog: runtime_data is not a ZeptrionAirData instance.")
         # Depending on criticality, could return False or raise an error.
         # For now, we log the error and proceed without WS, as core functionality might still work.
         # Consider returning False if WS is essential:
@@ -276,10 +304,18 @@ async def async_unload_entry(
 ) -> bool:
     """Handle removal of an entry."""
     # Stop the websocket listener if it exists
-    if entry.runtime_data and isinstance(entry.runtime_data, ZeptrionAirData) and entry.runtime_data.websocket_listener:
-        LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Unloading: Stopping websocket listener.")
-        await entry.runtime_data.websocket_listener.stop()
-        entry.runtime_data.websocket_listener = None
+    if entry.runtime_data and isinstance(entry.runtime_data, ZeptrionAirData):
+        # Stop the watchdog first
+        if entry.runtime_data.websocket_watchdog_cancel_callback:
+            LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Unloading: Cancelling websocket watchdog.")
+            entry.runtime_data.websocket_watchdog_cancel_callback()
+            entry.runtime_data.websocket_watchdog_cancel_callback = None # Clear the stored callback
+
+        # Then stop the websocket listener
+        if entry.runtime_data.websocket_listener:
+            LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Unloading: Stopping websocket listener.")
+            await entry.runtime_data.websocket_listener.stop()
+            entry.runtime_data.websocket_listener = None
 
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
     if unload_ok:

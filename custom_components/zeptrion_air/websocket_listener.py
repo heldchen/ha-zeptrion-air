@@ -18,93 +18,100 @@ class ZeptrionAirWebsocketListener:
         self._ws_url = f"ws://{self._hostname}/zrap/ws"
         _LOGGER.debug(f"[{self._hostname}] ZeptrionAirWebsocketListener instance created for {self._hostname}")
 
-    async def _connect(self):
-        """Connect to websocket and return success status."""
-        _LOGGER.debug(f"[{self._hostname}] Attempting to connect to websocket at {self._ws_url}...")
-        try:
-            if self._websocket:
-                _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
-                await self._close_websocket()
-
-            self._websocket = await websockets.connect(self._ws_url, ping_interval=25, ping_timeout=20)
-            _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
-            return True
-        except ConnectionRefusedError:
-            _LOGGER.error(f"[{self._hostname}] Websocket connection refused for {self._ws_url}.")
-        except websockets.exceptions.InvalidURI:
-            _LOGGER.error(f"[{self._hostname}] Invalid Websocket URI: {self._ws_url}")
-        except websockets.exceptions.WebSocketException as e:
-            _LOGGER.error(f"[{self._hostname}] Websocket connection error for {self._ws_url}: {type(e).__name__} - {e}")
-        except Exception as e:
-            _LOGGER.error(f"[{self._hostname}] Unexpected error connecting to websocket {self._ws_url}: {type(e).__name__} - {e}")
-
-        await self._close_websocket()
-        return False
-
-    async def listen(self):
-        """Main websocket listener loop with reconnection logic."""
-        _LOGGER.info(f"[{self._hostname}] Main websocket listener loop started. self._is_running = {self._is_running}")
-        backoff_time = 5
+    async def _connect_with_retry(self):
+        """Connect to websocket with exponential backoff retry logic."""
+        backoff_time = 1
         max_backoff_time = 60
 
         while self._is_running:
-            connection_successful = await self._connect()
-
-            if connection_successful and self._websocket:
-                _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
-                backoff_time = 5
-
-                try:
-                    while self._is_running and self._websocket:
-                        try:
-                            message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=60.0)
-                            status_time = time.time()
-                            _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
-                            decoded_message = self._decode_message(message_raw, status_time)
-                            if decoded_message:
-                                _LOGGER.debug(f"[{self._hostname}] Decoded WS Message: {decoded_message}")
-                                if decoded_message.get("source") == "eid1":
-                                    self._hass.bus.async_fire(
-                                        ZEPTRION_AIR_WEBSOCKET_MESSAGE,
-                                        decoded_message
-                                    )
-
-                        except asyncio.TimeoutError:
-                            _LOGGER.debug(f"[{self._hostname}] Websocket recv timed out. Checking connection with a ping.")
-                            try:
-                                pong_waiter = await self._websocket.ping()
-                                await asyncio.wait_for(pong_waiter, timeout=10)
-                                _LOGGER.debug(f"[{self._hostname}] Ping successful after recv timeout.")
-                            except Exception as e:
-                                _LOGGER.warning(f"[{self._hostname}] Websocket ping failed after recv timeout: {type(e).__name__} - {e}. Connection likely lost.")
-                                await self._close_websocket()
-                                break
-
-                        except websockets.exceptions.ConnectionClosed as e:
-                            _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
-                            await self._close_websocket()
-                            break
-
-                        except Exception as e:
-                            _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
-                            await self._close_websocket()
-                            break
-
-                    if not self._is_running:
-                        _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
-                        break
-
-                except Exception as e:
-                    _LOGGER.error(f"[{self._hostname}] Unexpected error in message receiving logic: {type(e).__name__} - {e}")
+            _LOGGER.debug(f"[{self._hostname}] Attempting to connect to websocket at {self._ws_url}...")
+            try:
+                # Ensure any previous connection is closed before attempting a new one
+                if self._websocket:
+                    _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
                     await self._close_websocket()
 
-            if self._is_running:
-                _LOGGER.info(f"[{self._hostname}] Websocket connection attempt failed or connection lost. Waiting {backoff_time}s before reconnecting.")
-                await self._close_websocket()
+                self._websocket = await websockets.connect(self._ws_url, ping_interval=25, ping_timeout=20)
+                _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
+                return self._websocket # Return the active websocket connection
+            except ConnectionRefusedError:
+                _LOGGER.error(f"[{self._hostname}] Websocket connection refused for {self._ws_url}.")
+            except websockets.exceptions.InvalidURI:
+                _LOGGER.error(f"[{self._hostname}] Invalid Websocket URI: {self._ws_url}")
+            except websockets.exceptions.WebSocketException as e:
+                _LOGGER.error(f"[{self._hostname}] Websocket connection error for {self._ws_url}: {type(e).__name__} - {e}")
+            except Exception as e:
+                _LOGGER.error(f"[{self._hostname}] Unexpected error connecting to websocket {self._ws_url}: {type(e).__name__} - {e}")
+
+            # If connection failed, clean up and prepare for retry
+            await self._close_websocket()
+
+            if not self._is_running:
+                _LOGGER.info(f"[{self._hostname}] Stop requested during connection attempt. Exiting connect_with_retry.")
+                return None
+
+            _LOGGER.info(f"[{self._hostname}] Websocket connection attempt failed. Waiting {backoff_time}s before reconnecting.")
+            try:
                 await asyncio.sleep(backoff_time)
-                backoff_time = min(max_backoff_time, backoff_time * 2)
-            else:
-                 _LOGGER.info(f"[{self._hostname}] Stop requested. Exiting main listener loop.")
+            except asyncio.CancelledError:
+                _LOGGER.info(f"[{self._hostname}] Sleep for backoff was cancelled. Likely stop requested.")
+                return None
+
+            backoff_time = min(max_backoff_time, backoff_time * 2)
+
+        _LOGGER.info(f"[{self._hostname}] Exiting connect_with_retry because self._is_running is false.")
+        return None
+
+    async def listen(self):
+        """Main websocket listener loop."""
+        _LOGGER.info(f"[{self._hostname}] Main websocket listener loop started. self._is_running = {self._is_running}")
+
+        while self._is_running:
+            self._websocket = await self._connect_with_retry()
+
+            if not self._websocket or not self._is_running:
+                _LOGGER.info(f"[{self._hostname}] Connection could not be established or stop requested. Exiting listener loop.")
+                break
+
+            _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
+            try:
+                while self._is_running and self._websocket:
+                    try:
+                        message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=60.0) # Rely on ping_interval for keep-alive
+                        status_time = time.time()
+                        _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
+                        decoded_message = self._decode_message(message_raw, status_time)
+                        if decoded_message:
+                            _LOGGER.debug(f"[{self._hostname}] Decoded WS Message: {decoded_message}")
+                            if decoded_message.get("source") == "eid1":
+                                self._hass.bus.async_fire(
+                                    ZEPTRION_AIR_WEBSOCKET_MESSAGE,
+                                    decoded_message
+                                )
+                    except asyncio.TimeoutError:
+                        _LOGGER.warning(f"[{self._hostname}] Websocket recv timed out after 60s. This might indicate an issue despite keep-alive pings. Attempting to reconnect.")
+                        # No manual ping here, rely on websockets auto ping/pong.
+                        # Timeout here means something is wrong, so break to reconnect.
+                        await self._close_websocket() # Ensure cleanup before breaking
+                        break
+                    except websockets.exceptions.ConnectionClosed as e:
+                        _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
+                        await self._close_websocket()
+                        break
+                    except Exception as e:
+                        _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
+                        await self._close_websocket()
+                        break
+
+                if not self._is_running:
+                    _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
+            except Exception as e:
+                _LOGGER.error(f"[{self._hostname}] Unexpected error in message receiving logic wrapper: {type(e).__name__} - {e}")
+                await self._close_websocket()
+
+            # If the inner loop broke (due to error or connection loss) and we are still running,
+            # the outer loop will call _connect_with_retry() again.
+            # No explicit sleep or backoff here, as _connect_with_retry handles it.
 
         _LOGGER.info(f"[{self._hostname}] Websocket listener has fully stopped.")
         await self._close_websocket()
@@ -125,16 +132,36 @@ class ZeptrionAirWebsocketListener:
 
         if 'eid1' in message_json:
             eid1_data = message_json['eid1']
+            if eid1_data is None:
+                _LOGGER.warning(f"[{self._hostname}] Received eid1 message with null data: {message_json}")
+                return None
+
+            channel = eid1_data.get('ch')
+            value = eid1_data.get('val')
+
+            if channel is None or value is None:
+                _LOGGER.warning(f"[{self._hostname}] Received eid1 message with missing 'ch' or 'val': {message_json}")
+
             decoded_info.update({
                 "type": "value_update",
-                "channel": eid1_data.get('ch'),
-                "value": eid1_data.get('val'),
+                "channel": channel,
+                "value": value,
                 "source": "eid1"
             })
             return decoded_info
         elif 'eid2' in message_json:
             eid2_data = message_json['eid2']
+            if eid2_data is None:
+                _LOGGER.warning(f"[{self._hostname}] Received eid2 message with null data: {message_json}")
+                return None
+
             bta_str = eid2_data.get('bta', '')
+            # It's possible bta_str might be None if 'bta' key exists but value is null, though .get with default handles it.
+            # However, if bta was critical and could be null, an explicit check:
+            # if bta_str is None:
+            #     _LOGGER.warning(f"[{self._hostname}] Received eid2 message with null 'bta': {message_json}")
+            #     return None
+
             buttons_state = bta_str.split('.')
             pressed_button_index = -1
             try:

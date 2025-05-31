@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from homeassistant.config_entries import ConfigEntry
 
 if TYPE_CHECKING:
@@ -21,6 +21,7 @@ class ZeptrionAirData:
     coordinator: ZeptrionAirDataUpdateCoordinator
     integration: Integration
     websocket_listener: "ZeptrionAirWebsocketListener | None" = None
+    websocket_watchdog_cancel_callback: Callable[[], None] | None = None
 
 @dataclass
 class ZeptrionAirConfigEntry(ConfigEntry):
