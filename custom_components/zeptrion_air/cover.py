@@ -7,10 +7,12 @@ from typing import Any
 from homeassistant.components.cover import (
     CoverDeviceClass,
     CoverEntity,
+    CoverDeviceClass,
+    CoverEntity,
     CoverEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, Event
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,6 +25,7 @@ from .const import (
     SERVICE_BLIND_RECALL_S4,
     CONF_STEP_DURATION_MS,
     DEFAULT_STEP_DURATION_MS,
+    ZEPTRION_AIR_WEBSOCKET_MESSAGE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -159,6 +162,8 @@ class ZeptrionAirBlind(CoverEntity):
         self._attr_is_opening: bool | None = None
         self._attr_is_closing: bool | None = None
         self._attr_current_cover_position: int | None = None
+        self._commanded_action: str | None = None
+        self._active_action: str | None = None
 
         self._attr_supported_features: CoverEntityFeature = (
             CoverEntityFeature.OPEN |
@@ -197,6 +202,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Opening blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_open(self._channel_id)
+            self._commanded_action = "opening"
             # Optimistic updates (optional, as per instructions)
             # self._attr_is_opening = True
             # self._attr_is_closing = False
@@ -214,6 +220,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Closing blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_close(self._channel_id)
+            self._commanded_action = "closing"
             # Optimistic updates (optional)
             # self._attr_is_closing = True
             # self._attr_is_opening = False
@@ -231,6 +238,7 @@ class ZeptrionAirBlind(CoverEntity):
         _LOGGER.debug("Stopping blind %s (Channel %s)", self._attr_name, self._channel_id)
         try:
             await self.config_entry.runtime_data.client.async_channel_stop(self._channel_id)
+            self._commanded_action = "stop"
             # Optimistic updates (optional)
             # self._attr_is_opening = False
             # self._attr_is_closing = False
@@ -248,6 +256,7 @@ class ZeptrionAirBlind(CoverEntity):
         step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
             await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
+            self._commanded_action = "opening"
             # No optimistic state updates for tilt for now, similar to open/close.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -262,6 +271,7 @@ class ZeptrionAirBlind(CoverEntity):
         step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         try:
             await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
+            self._commanded_action = "closing"
             # No optimistic state updates for tilt for now.
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting close blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -293,7 +303,12 @@ class ZeptrionAirBlind(CoverEntity):
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
-        await super().async_added_to_hass() 
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                ZEPTRION_AIR_WEBSOCKET_MESSAGE, self.async_handle_websocket_message
+            )
+        )
                                             
         platform: entity_platform.EntityPlatform | None = entity_platform.async_get_current_platform()
 
@@ -320,6 +335,94 @@ class ZeptrionAirBlind(CoverEntity):
             )
         else:
             _LOGGER.warning("Entity platform not available for %s, services not registered.", self.entity_id)
+
+    async def async_handle_websocket_message(self, event: Event) -> None:
+        """Handle websocket messages for the blind."""
+        message_data = event.data
+        if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
+            raw_value = message_data.get("value")
+            try:
+                processed_value = int(raw_value)
+            except (ValueError, TypeError) as e:
+                _LOGGER.error(f"Could not convert 'value' ({raw_value}) to int for {self._attr_name}: {e}")
+                return
+
+            _LOGGER.debug(
+                f"Handling WS for {self._attr_name}: val={processed_value}, "
+                f"cmd_action={self._commanded_action}, active_action={self._active_action}, is_closed={self._attr_is_closed}"
+            )
+            # _LOGGER.debug(f"Event data: {message_data}") # Removed as per subtask, event data can be large
+
+            old_active_action = self._active_action
+            # Store initial states for comparison after all logic for this event value has run
+            initial_is_opening = self._attr_is_opening
+            initial_is_closing = self._attr_is_closing
+            initial_is_closed = self._attr_is_closed
+
+            if processed_value == 100:  # Action is running
+                if self._commanded_action == "opening":
+                    self._active_action = "opening"
+                elif self._commanded_action == "closing":
+                    self._active_action = "closing"
+                else:
+                    # Warning is kept, specific debug logs about intention removed
+                    _LOGGER.warning(
+                        f"Blind {self._attr_name} received val=100 (movement started) "
+                        f"but current commanded_action is '{self._commanded_action}'. "
+                        f"_active_action will remain '{self._active_action}'. This may indicate a desync or delayed message."
+                    )
+
+                if old_active_action != self._active_action:
+                    _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
+
+                # Attribute updates based on the determined self._active_action
+                if self._active_action == "opening":
+                    self._attr_is_opening = True
+                    self._attr_is_closing = False
+                    self._attr_is_closed = False
+                elif self._active_action == "closing":
+                    self._attr_is_closing = True
+                    self._attr_is_opening = False
+                    # Do NOT set self._attr_is_closed = True here
+                else:
+                    self._attr_is_opening = False
+                    self._attr_is_closing = False
+
+            elif processed_value == 0:  # Action stopped
+                if self._active_action == "opening":
+                    self._attr_is_closed = False
+                elif self._active_action == "closing":
+                    self._attr_is_closed = True
+
+                self._attr_is_opening = False
+                self._attr_is_closing = False
+                self._active_action = None # Reset active_action as movement stopped
+
+            # Log changes to attributes compared to their state at the beginning of the specific 100 or 0 block processing
+            # This requires capturing them before the if/elif for processed_value
+            # The existing logic captures current_is_opening etc. *inside* the blocks.
+            # For simplification, we'll compare with initial_is_opening etc. captured before the main if/elif.
+            # This means logs will show the net change after this event.
+
+            if initial_is_opening != self._attr_is_opening:
+                _LOGGER.debug(f"Changed _attr_is_opening from {initial_is_opening} to {self._attr_is_opening} for {self._attr_name}")
+            if initial_is_closing != self._attr_is_closing:
+                _LOGGER.debug(f"Changed _attr_is_closing from {initial_is_closing} to {self._attr_is_closing} for {self._attr_name}")
+            if initial_is_closed != self._attr_is_closed:
+                _LOGGER.debug(f"Changed _attr_is_closed from {initial_is_closed} to {self._attr_is_closed} for {self._attr_name}")
+
+            # Log change for _active_action if it happened in the processed_value == 0 block
+            # (already logged if it changed in processed_value == 100 block)
+            if processed_value == 0 and old_active_action != self._active_action:
+                 _LOGGER.debug(f"Changed _active_action from '{old_active_action}' to '{self._active_action}' for {self._attr_name}")
+
+
+            _LOGGER.debug(
+                f"Finished WS for {self._attr_name}: cmd_action={self._commanded_action}, "
+                f"active_action={self._active_action}, is_closed={self._attr_is_closed}, "
+                f"is_opening={self._attr_is_opening}, is_closing={self._attr_is_closing}"
+            )
+            self.async_write_ha_state()
 
     async def async_blind_recall_s1(self) -> None:
         """Recall scene S1 for the blind."""

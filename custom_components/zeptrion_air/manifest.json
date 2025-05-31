@@ -10,5 +10,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/alternize/ha-zeptrion-air-integration/issues",
   "version": "2025.5.4",
-  "zeroconf": ["_zapp._tcp.local."]
+  "zeroconf": ["_zapp._tcp.local."],
+  "requirements": ["websockets>=10.0"]
 }
