@@ -31,7 +31,7 @@ class ZeptrionAirWebsocketListener:
                     _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
                     await self._close_websocket()
 
-                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=None)
+                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=None, close_timeout=10)
                 _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
                 return self._websocket # Return the active websocket connection
             except ConnectionRefusedError:
@@ -73,48 +73,43 @@ class ZeptrionAirWebsocketListener:
                 _LOGGER.info(f"[{self._hostname}] Connection could not be established or stop requested. Exiting listener loop.")
                 break
 
-            _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
+            _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop using async for.")
             try:
-                while self._is_running and self._websocket:
-                    try:
-                        message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=75.0) # Rely on ping_interval for keep-alive
-                        status_time = time.time()
-                        _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
-                        decoded_message = self._decode_message(message_raw, status_time)
-                        if decoded_message:
-                            _LOGGER.debug(f"[{self._hostname}] Decoded WS Message: {decoded_message}")
-                            if decoded_message.get("source") == "eid1":
-                                self._hass.bus.async_fire(
-                                    ZEPTRION_AIR_WEBSOCKET_MESSAGE,
-                                    decoded_message
-                                )
-                    except asyncio.TimeoutError:
-                        _LOGGER.warning(f"[{self._hostname}] Websocket recv timed out after 75s. This might indicate an issue despite keep-alive pings. Attempting to reconnect.")
-                        # No manual ping here, rely on websockets auto ping/pong.
-                        # Timeout here means something is wrong, so break to reconnect.
-                        await self._close_websocket() # Ensure cleanup before breaking
-                        break
-                    except websockets.exceptions.ConnectionClosed as e:
-                        _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
-                        await self._close_websocket()
-                        break
-                    except Exception as e:
-                        _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
-                        await self._close_websocket()
-                        break
+                async for message_raw in self._websocket: # NEW LOOP
+                    if not self._is_running:
+                        _LOGGER.info(f"[{self._hostname}] Stop requested during message processing in async for. Breaking from loop.")
+                        break  # Exit the async for loop
 
-                if not self._is_running:
-                    _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
+                    status_time = time.time()
+                    _LOGGER.debug(f"[{self._hostname}] Raw WS message via async for: {message_raw}")
+                    decoded_message = self._decode_message(message_raw, status_time)
+                    if decoded_message:
+                        _LOGGER.debug(f"[{self._hostname}] Decoded WS Message: {decoded_message}")
+                        if decoded_message.get("source") == "eid1":
+                            self._hass.bus.async_fire(
+                                ZEPTRION_AIR_WEBSOCKET_MESSAGE,
+                                decoded_message
+                            )
+            # This except block catches errors from `async for`, including connection closed.
+            except websockets.exceptions.ConnectionClosed as e:
+                _LOGGER.warning(f"[{self._hostname}] Websocket connection closed during async for (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
             except Exception as e:
-                _LOGGER.error(f"[{self._hostname}] Unexpected error in message receiving logic wrapper: {type(e).__name__} - {e}")
+                _LOGGER.error(f"[{self._hostname}] Error during websocket async for loop or message processing: {type(e).__name__} - {e}. Will attempt to reconnect.")
+            finally:
+                # This finally ensures that if the async for loop terminates (either by break, error, or natural end of connection),
+                # we attempt to close the websocket before the outer loop potentially tries to reconnect or exits.
+                _LOGGER.debug(f"[{self._hostname}] Exiting async for message loop. Closing websocket if still set.")
                 await self._close_websocket()
 
-            # If the inner loop broke (due to error or connection loss) and we are still running,
-            # the outer loop will call _connect_with_retry() again.
-            # No explicit sleep or backoff here, as _connect_with_retry handles it.
+            # If the inner loop (async for) broke and self._is_running is still true,
+            # the outer `while self._is_running` loop will continue, leading to a reconnect attempt.
+            # A small sleep might be good here if the connection drops rapidly, handled by _connect_with_retry's backoff.
 
         _LOGGER.info(f"[{self._hostname}] Websocket listener has fully stopped.")
-        await self._close_websocket()
+        # Final cleanup, though _close_websocket() in finally above should handle most cases.
+        # Ensure it's idempotent or checked.
+        if self._websocket: # Redundant if finally always runs and sets to None, but safe.
+           await self._close_websocket()
 
     def _decode_message(self, message_raw: str, status_time: float) -> dict | None:
         """Decode websocket message and return structured data."""
