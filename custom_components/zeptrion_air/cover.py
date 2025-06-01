@@ -303,7 +303,14 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_handle_websocket_message(self, event: Event) -> None:
         """Handle websocket messages for the blind."""
         message_data = event.data
-        if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
+        if (message_data.get("channel") == self._channel_id and
+            message_data.get("source") == "eid1"):
+            # Check hub_unique_id only if channel and source match
+            if message_data.get("hub_unique_id") != self.config_entry.unique_id:
+                _LOGGER.debug("Ignoring WS message for channel %s on entity %s because hub_unique_id '%s' does not match expected '%s'",
+                              self._channel_id, self.entity_id, message_data.get("hub_unique_id"), self.config_entry.unique_id)
+                return
+
             message_value = message_data.get("value")
 
             _LOGGER.debug("Handling WS for %s: val=%s, cmd_action=%s, active_action=%s, is_closed=%s",
