@@ -9,9 +9,10 @@ import websockets
 _LOGGER = logging.getLogger(__name__)
 
 class ZeptrionAirWebsocketListener:
-    def __init__(self, hostname: str, hass_instance):
+    def __init__(self, hostname: str, hass_instance, hub_unique_id: str):
         self._hostname = hostname
         self._hass = hass_instance
+        self._hub_unique_id = hub_unique_id
         self._websocket = None
         self._task = None
         self._is_running = False
@@ -146,7 +147,8 @@ class ZeptrionAirWebsocketListener:
                 "type": "value_update",
                 "channel": channel,
                 "value": value,
-                "source": "eid1"
+                "source": "eid1",
+                "hub_unique_id": self._hub_unique_id
             })
             return decoded_info
         elif 'eid2' in message_json:
@@ -174,7 +176,8 @@ class ZeptrionAirWebsocketListener:
                 "button_states_array": buttons_state,
                 "pressed_button_index": pressed_button_index,
                 "source": "eid2",
-                "bta_raw": bta_str
+                "bta_raw": bta_str,
+                "hub_unique_id": self._hub_unique_id
             })
             return decoded_info
         else:

@@ -140,42 +140,52 @@ async def async_setup_entry(
 
     current_runtime_data = entry.runtime_data
     if isinstance(current_runtime_data, ZeptrionAirData):
-        websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass)
-        await websocket_listener.start()
+        if entry.unique_id:
+            websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass, hub_unique_id=entry.unique_id)
+            await websocket_listener.start()
+            current_runtime_data.websocket_listener = websocket_listener
+        else:
+            LOGGER.error(f"[{hostname}] Cannot start WebSocket listener: entry.unique_id is not set. This is unexpected.")
+            # Optionally, set current_runtime_data.websocket_listener to None or handle error
+            current_runtime_data.websocket_listener = None # Ensure it's None if not started
+        if current_runtime_data.websocket_listener: # Only proceed if listener was successfully created and started
+            LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
 
-        current_runtime_data.websocket_listener = websocket_listener
-        LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
+            # Define and schedule the watchdog
+            async def async_websocket_watchdog(now=None):
+                """Check the websocket listener and restart if necessary."""
+                # Ensure websocket_listener is not None before using it
+                if current_runtime_data.websocket_listener:
+                    LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
+                    if not current_runtime_data.websocket_listener.is_alive():
+                        LOGGER.warning(f"[{hostname}] Watchdog: WebSocket listener found inactive. Attempting restart.")
+                        try:
+                            await current_runtime_data.websocket_listener.start()
+                            LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
+                        except Exception as e:
+                            LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
+                    else:
+                        LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
+                else:
+                    LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is None, skipping check.")
 
-        # Define and schedule the watchdog
-        async def async_websocket_watchdog(now=None):
-            """Check the websocket listener and restart if necessary."""
-            LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
-            if not websocket_listener.is_alive():
-                LOGGER.warning(f"[{hostname}] Watchdog: WebSocket listener found inactive. Attempting restart.")
-                try:
-                    await websocket_listener.start()
-                    LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
-                except Exception as e:
-                    LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
-            else:
-                LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
 
-        # Schedule the watchdog to run every 5 minutes
-        cancel_watchdog_callback = async_track_time_interval(
-            hass,
-            async_websocket_watchdog,
-            timedelta(minutes=5)
-        )
-        current_runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
-        LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
+            # Schedule the watchdog to run every 5 minutes
+            cancel_watchdog_callback = async_track_time_interval(
+                hass,
+                async_websocket_watchdog,
+                timedelta(minutes=5)
+            )
+            current_runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
+            LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
+        else:
+            LOGGER.info(f"[{hostname}] WebSocket listener was not started (e.g. missing unique_id). Watchdog not scheduled.")
 
     else:
-        # If websocket_listener was somehow initialized before this check failed, ensure it's stopped.
-        if 'websocket_listener' in locals() and websocket_listener:
-            LOGGER.warning(f"[{hostname}] Runtime data is not ZeptrionAirData instance. Stopping websocket listener if active.")
-            await websocket_listener.stop()
+        # This block handles the case where current_runtime_data is not a ZeptrionAirData instance.
+        # It's less likely to have a 'websocket_listener' local variable here that needs stopping
+        # because the listener's lifecycle is tied to current_runtime_data being the correct type.
         LOGGER.error(f"[{hostname}] Cannot start WebSocket listener or watchdog: runtime_data is not a ZeptrionAirData instance.")
-        # Depending on criticality, could return False or raise an error.
         # For now, we log the error and proceed without WS, as core functionality might still work.
         # Consider returning False if WS is essential:
         # return False

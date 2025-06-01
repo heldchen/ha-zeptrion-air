@@ -303,7 +303,12 @@ class ZeptrionAirBlind(CoverEntity):
     async def async_handle_websocket_message(self, event: Event) -> None:
         """Handle websocket messages for the blind."""
         message_data = event.data
-        if message_data.get("channel") == self._channel_id and message_data.get("source") == "eid1":
+        if (message_data.get("channel") == self._channel_id and
+            message_data.get("source") == "eid1"):
+            # Check hub_unique_id only if channel and source match
+            if message_data.get("hub_unique_id") != self.config_entry.unique_id:
+                return
+
             message_value = message_data.get("value")
 
             _LOGGER.debug("Handling WS for %s: val=%s, cmd_action=%s, active_action=%s, is_closed=%s",
@@ -331,7 +336,7 @@ class ZeptrionAirBlind(CoverEntity):
                     self._attr_is_opening = False
                     self._attr_is_closing = False
 
-            elif processed_value == 0:  # Action stopped
+            elif message_value == 0:  # Action stopped
                 # this is unreliable as we don't know the real position. it can be influenced by
                 # hardware button presses and scenes
                 if self._active_action == "opening":
@@ -344,7 +349,8 @@ class ZeptrionAirBlind(CoverEntity):
                 self._active_action = None
                 
             else:
-                return
+                _LOGGER.warning("Blind %s received unexpected message value %s, ignoring.",
+                                self._attr_name, message_value)
 
             _LOGGER.debug("Finished WS for %s: cmd_action=%s, active_action=%s, is_closed=%s, is_opening=%s, is_closing=%s",
                           self._attr_name, self._commanded_action, self._active_action, self._attr_is_closed, 

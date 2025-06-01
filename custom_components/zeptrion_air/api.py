@@ -1,19 +1,26 @@
-"""Sample API Client."""
+"""Zeptrion Air API Client."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
+import random
 import socket
 import xmltodict
-from urllib.parse import urlencode # Added import
+from urllib.parse import urlencode
 
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 import aiohttp
+from aiohttp import ClientResponseError
 import async_timeout
 
 _LOGGER = logging.getLogger(__name__)
+
+# Type variables for generic retry wrapper
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 class ZeptrionAirApiClientError(Exception):
@@ -32,17 +39,24 @@ def _verify_response_or_raise(response: aiohttp.ClientResponse) -> None:
 
 
 class ZeptrionAirApiClient:
-    """Sample API Client."""
+    """Zeptrion Air API Client."""
 
     def __init__(
         self,
         hostname: str,
         session: aiohttp.ClientSession,
+        max_retries: int = 3,
+        base_delay: float = 0.5,
+        enable_jitter: bool = True,
+        request_timeout: float = 10.0,
     ) -> None:
-        """Sample API Client."""
         self._hostname = hostname
-        self._baseurl = 'http://' + hostname
+        self._baseurl = f'http://{hostname}'
         self._session = session
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+        self._enable_jitter = enable_jitter
+        self._request_timeout = request_timeout
 
     async def async_get_device_identification(self) -> dict[str, Any]:
         """Get the device identification from the API."""
@@ -53,6 +67,7 @@ class ZeptrionAirApiClient:
 
     async def async_get_rssi(self) -> int | None:
         """Fetch and parse the RSSI value from the device."""
+        response_data = None
         try:
             response_data = await self._api_xml_wrapper(
                 method="get",
@@ -63,47 +78,111 @@ class ZeptrionAirApiClient:
                isinstance(response_data['rssi'], dict) and \
                'dbm' in response_data['rssi']:
                 dbm_value_str = response_data['rssi']['dbm']
-                if dbm_value_str is None: # Handle cases where dbm tag might be empty e.g. <dbm/>
+                if dbm_value_str is None:  # Handle cases where dbm tag might be empty e.g. <dbm/>
                     _LOGGER.error(
-                        "RSSI 'dbm' tag was empty in response from %s. Response: %s",
-                        self._hostname,
-                        response_data,
+                        f"RSSI 'dbm' tag was empty in response from {self._hostname}. Response: {response_data}"
                     )
                     return None
                 return int(dbm_value_str)
             else:
                 _LOGGER.error(
-                    "Unexpected structure for RSSI data from %s. Missing 'rssi' or 'dbm' key. Response: %s",
-                    self._hostname,
-                    response_data,
+                    f"Unexpected structure for RSSI data from {self._hostname}. "
+                    f"Missing 'rssi' or 'dbm' key. Response: {response_data}"
                 )
                 return None
-        except (ValueError, TypeError) as e: # ValueError for int(), TypeError for None access
+        except (ValueError, TypeError) as e:  # ValueError for int(), TypeError for None access
             _LOGGER.error(
-                "Failed to parse RSSI value from %s: %s. Response data: %s",
-                self._hostname,
-                e,
-                response_data, # type: ignore # response_data might be unbound if _api_xml_wrapper failed early
+                f"Failed to parse RSSI value from {self._hostname}: {e}. Response data: {response_data}"
             )
             return None
         except ZeptrionAirApiClientCommunicationError as e:
             # Logged by _api_xml_wrapper, re-raise or handle if needed differently here
-            _LOGGER.debug("Communication error fetching RSSI for %s: %s (already logged by wrapper)", self._hostname, e)
-            raise # Re-raise to be handled by the caller (e.g. coordinator)
+            _LOGGER.debug(f"Communication error fetching RSSI for {self._hostname}: {e} (already logged by wrapper)")
+            raise  # Re-raise to be handled by the caller (e.g. coordinator)
         except ZeptrionAirApiClientError as e:
-            _LOGGER.error("Generic API client error fetching RSSI for %s: %s", self._hostname, e)
+            _LOGGER.error(f"Generic API client error fetching RSSI for {self._hostname}: {e}")
             # Depending on desired behavior, could return None or re-raise
-            return None # Or raise, if the coordinator should handle this as a critical failure
-        except Exception as e: # Catch any other unexpected errors during parsing
+            return None  # Or raise, if the coordinator should handle this as a critical failure
+        except Exception as e:  # Catch any other unexpected errors during parsing
             _LOGGER.error(
-                "Unexpected error fetching or parsing RSSI from %s: %s. Response data: %s",
-                self._hostname,
-                e,
-                response_data, # type: ignore
-                exc_info=True # Include stack trace for unexpected errors
+                f"Unexpected error fetching or parsing RSSI from {self._hostname}: {e}. "
+                f"Response data: {response_data}",
+                exc_info=True
             )
             return None
 
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate delay for retry attempt with exponential backoff and optional jitter."""
+        base_delay = self._base_delay * (2 ** attempt)
+        if self._enable_jitter:
+            jitter = random.uniform(0, 0.1)
+            return base_delay + jitter
+        return base_delay
+
+    async def _execute_request_with_retry(
+        self,
+        request_coro: Callable[P, Awaitable[T]],
+        method_name_for_log: str,
+        path_for_log: str,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute a request coroutine with retry logic for specific errors."""
+        for attempt in range(self._max_retries):
+            try:
+                return await request_coro(*args, **kwargs)
+            except ClientResponseError as error:
+                if error.status != 500 or attempt == self._max_retries - 1:
+                    _LOGGER.error(
+                        f"Request {method_name_for_log} {path_for_log} failed with status {error.status} "
+                        f"after {attempt + 1} attempts."
+                    )
+                    raise
+                
+                delay = self._calculate_retry_delay(attempt)
+                _LOGGER.warning(
+                    f"Request {method_name_for_log} {path_for_log} failed with status 500 "
+                    f"(attempt {attempt + 1}/{self._max_retries}). Retrying in {delay:.1f} seconds..."
+                )
+                await asyncio.sleep(delay)
+                
+            except asyncio.TimeoutError as error:
+                if attempt == self._max_retries - 1:
+                    _LOGGER.error(
+                        f"Timeout error for {method_name_for_log} {path_for_log} after "
+                        f"{self._max_retries} attempts: {error}"
+                    )
+                    raise
+                    
+                delay = self._calculate_retry_delay(attempt)
+                _LOGGER.warning(
+                    f"Timeout error for {method_name_for_log} {path_for_log} "
+                    f"(attempt {attempt + 1}/{self._max_retries}). Retrying in {delay:.1f} seconds: {error}"
+                )
+                await asyncio.sleep(delay)
+        
+        # This line should never be reached due to the logic above
+        raise ZeptrionAirApiClientError(
+            f"Request {method_name_for_log} {path_for_log} failed unexpectedly after all retries"
+        )
+
+    async def _perform_json_request(
+        self,
+        method: str,
+        path: str,
+        json_payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Actual JSON request logic."""
+        async with async_timeout.timeout(self._request_timeout):
+            response = await self._session.request(
+                method=method,
+                url=f"{self._baseurl}{path}",
+                headers=headers,
+                json=json_payload,
+            )
+            _verify_response_or_raise(response)
+            return await response.json()  # type: ignore[no-any-return]
 
     async def _api_json_wrapper(
         self,
@@ -112,38 +191,60 @@ class ZeptrionAirApiClient:
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Get information from the API via XML."""
+        """Get information from the API via JSON with retry logic managed by helper."""
         try:
-            # _LOGGER.info("[API] --> %s %s", method, self._baseurl + path)
-            async with async_timeout.timeout(10):
-                response = await self._session.request(
-                    method=method,
-                    url=self._baseurl + path,
-                    headers=headers,
-                    json=data,
-                )
-                _verify_response_or_raise(response)
-
-                data = await response.json()
-                # _LOGGER.info("[API] <-- %s %s", response.status, data)
-                return data
-
-        except TimeoutError as exception:
-            msg = f"Timeout error fetching information - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            return await self._execute_request_with_retry(
+                self._perform_json_request,
+                f"JSON {method}",
+                path,
+                method,
+                path,
+                data,
+                headers,
+            )
+        except ClientResponseError as error:
+            # If it's a non-500 or 500 after retries
+            msg = f"Error fetching JSON information from {path} - {error}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from error
+        except asyncio.TimeoutError as exception:
+            msg = f"Timeout error fetching JSON information from {path} after retries - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
         except (aiohttp.ClientError, socket.gaierror) as exception:
-            msg = f"Error fetching information - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            msg = f"Client/network error fetching JSON information from {path} - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
         except Exception as exception:  # pylint: disable=broad-except
-            msg = f"Something really wrong happened! - {exception}"
-            raise ZeptrionAirApiClientError(
-                msg,
-            ) from exception
-        
+            msg = f"Something really wrong happened fetching JSON from {path}! - {exception}"
+            raise ZeptrionAirApiClientError(msg) from exception
+
+    async def _perform_xml_request(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Actual XML request logic."""
+        async with async_timeout.timeout(self._request_timeout):
+            response = await self._session.request(
+                method=method,
+                url=f"{self._baseurl}{path}",
+                headers=headers,
+                data=data,
+            )
+            _verify_response_or_raise(response)
+            text_response = await response.text()
+            if not text_response:
+                return {}
+            try:
+                return xmltodict.parse(text_response)  # type: ignore[no-any-return]
+            except xmltodict.expat.ExpatError as expat_error:
+                _LOGGER.error(
+                    f"Failed to parse XML response from {method} {self._baseurl}{path}: {expat_error}. "
+                    f"Response: {text_response[:200]}"
+                )
+                # Raise specific error that won't be retried by _execute_request_with_retry's specific catches
+                raise ZeptrionAirApiClientError(f"Failed to parse XML response: {expat_error}") from expat_error
+
     async def _api_xml_wrapper(
         self,
         method: str,
@@ -151,95 +252,83 @@ class ZeptrionAirApiClient:
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Get information from the API."""
+        """Get information from the API via XML with retry logic managed by helper."""
         try:
-            # _LOGGER.info("[API] --> %s %s", method, self._baseurl + path)
-            async with async_timeout.timeout(10):
-                response = await self._session.request(
-                    method=method,
-                    url=self._baseurl + path,
-                    headers=headers,
-                    data=data, # For GET, data is typically None or query params in URL
-                )
-                _verify_response_or_raise(response)
-
-                text_response = await response.text()
-                # _LOGGER.info("[API] <-- %s %s", response.status, text_response)
-                if not text_response: # Handle empty responses for POST/302 potentially
-                    return {}
-                return xmltodict.parse(text_response)
-
-        except TimeoutError as exception:
-            msg = f"Timeout error fetching information - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            return await self._execute_request_with_retry(
+                self._perform_xml_request,
+                f"XML {method}",
+                path,
+                method,
+                path,
+                data,
+                headers,
+            )
+        except ClientResponseError as error:
+            msg = f"Error fetching XML information from {path} - {error}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from error
+        except asyncio.TimeoutError as exception:
+            msg = f"Timeout error fetching XML information from {path} after retries - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
         except (aiohttp.ClientError, socket.gaierror) as exception:
-            msg = f"Error fetching information - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            msg = f"Client/network error fetching XML information from {path} - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
+        except ZeptrionAirApiClientError:
+            raise
         except Exception as exception:  # pylint: disable=broad-except
-            msg = f"Something really wrong happened! - {exception}"
-            raise ZeptrionAirApiClientError(
-                msg,
-            ) from exception
+            msg = f"Something really wrong happened fetching XML from {path}! - {exception}"
+            raise ZeptrionAirApiClientError(msg) from exception
+
+    async def _perform_post_url_encoded_request(
+        self,
+        path: str,
+        form_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Actual POST URL-encoded request logic."""
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        encoded_data = urlencode(form_data)
+        async with async_timeout.timeout(self._request_timeout):
+            response = await self._session.request(
+                method="post",
+                url=f"{self._baseurl}{path}",
+                headers=headers,
+                data=encoded_data,
+            )
+            _verify_response_or_raise(response)
+            text_response = await response.text()
+            if not text_response:
+                return {}
+            try:
+                return xmltodict.parse(text_response)  # type: ignore[no-any-return]
+            except xmltodict.expat.ExpatError:
+                _LOGGER.debug(f"Response was not XML after POST to {path}: {text_response[:200]}")
+                return {"non_xml_response": text_response}
 
     async def _api_post_url_encoded_wrapper(
         self,
         path: str,
-        data: dict[str, Any], # Expecting a dict to be URL-encoded
+        data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Post URL-encoded data to the API and parse XML response."""
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-        encoded_data = urlencode(data)
+        """Post URL-encoded data to the API and parse XML response with retry logic managed by helper."""
         try:
-            # _LOGGER.info("[API] --> POST %s with %s", self._baseurl + path, encoded_data)
-            async with async_timeout.timeout(10):
-                response = await self._session.request(
-                    method="post",
-                    url=self._baseurl + path,
-                    headers=headers,
-                    data=encoded_data,
-                )
-                # Responses to POST /zrap/chctrl are 302 Found,
-                # aiohttp follows redirects by default.
-                # The final response after redirect might be empty or HTML.
-                # We attempt to parse XML for consistency, but handle errors.
-                _verify_response_or_raise(response)
-
-                # The API doc says 302 for /zrap/chctrl.
-                # aiohttp handles redirects by default. The final page might not be XML.
-                # Or it might be an error page in XML.
-                # If the final response is empty or not XML, xmltodict will raise an ExpatError.
-                text_response = await response.text()
-                # _LOGGER.info("[API] <-- %s %s", response.status, text_response)
-                if not text_response: # Handle empty responses
-                    return {}
-                try:
-                    return xmltodict.parse(text_response)
-                except xmltodict.expat.ExpatError:
-                    _LOGGER.debug("Response was not XML after POST to %s: %s", path, text_response)
-                    return {"non_xml_response": text_response}
-
-
-        except TimeoutError as exception:
-            msg = f"Timeout error posting URL-encoded data to {path} - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            return await self._execute_request_with_retry(
+                self._perform_post_url_encoded_request,
+                "POST URL-ENCODED",
+                path,
+                path,
+                data,
+            )
+        except ClientResponseError as error:
+            msg = f"Error posting URL-encoded data to {path} - {error}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from error
+        except asyncio.TimeoutError as exception:
+            msg = f"Timeout error posting URL-encoded data to {path} after retries - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
         except (aiohttp.ClientError, socket.gaierror) as exception:
-            msg = f"Error posting URL-encoded data to {path} - {exception}"
-            raise ZeptrionAirApiClientCommunicationError(
-                msg,
-            ) from exception
+            msg = f"Client/network error posting URL-encoded data to {path} - {exception}"
+            raise ZeptrionAirApiClientCommunicationError(msg) from exception
         except Exception as exception:  # pylint: disable=broad-except
             msg = f"Something really wrong happened posting URL-encoded data to {path}! - {exception}"
-            raise ZeptrionAirApiClientError(
-                msg,
-            ) from exception
+            raise ZeptrionAirApiClientError(msg) from exception
 
     async def async_get_channel_scan_info(self, channel: int) -> dict[str, Any]:
         """Get the scan info for a specific channel."""
@@ -326,12 +415,11 @@ class ZeptrionAirApiClient:
                 method="get",
                 path="/zrap/chdes",
             )
-            # _LOGGER.debug(f"/zrap/chdes response: {response_data}")
             return response_data
         except ZeptrionAirApiClientCommunicationError as e:
             _LOGGER.error(f"Communication error fetching channel descriptions from {self._hostname}: {e}")
             raise
-        except ZeptrionAirApiClientError as e: # Catch other client errors
+        except ZeptrionAirApiClientError as e:  # Catch other client errors
             _LOGGER.error(f"API client error fetching channel descriptions from {self._hostname}: {e}")
             raise
 
@@ -371,5 +459,3 @@ class ZeptrionAirApiClient:
             path=f"/zrap/chctrl/ch{channel}",
             data=data_payload,
         )
-
-
