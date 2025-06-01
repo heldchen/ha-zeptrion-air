@@ -31,7 +31,7 @@ class ZeptrionAirWebsocketListener:
                     _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
                     await self._close_websocket()
 
-                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=20)
+                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=None)
                 _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
                 return self._websocket # Return the active websocket connection
             except ConnectionRefusedError:
