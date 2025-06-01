@@ -32,7 +32,7 @@ class ZeptrionAirWebsocketListener:
                     _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
                     await self._close_websocket()
 
-                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=20)
+                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=None)
                 _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
                 return self._websocket # Return the active websocket connection
             except ConnectionRefusedError:
@@ -76,9 +76,13 @@ class ZeptrionAirWebsocketListener:
 
             _LOGGER.info(f"[{self._hostname}] Websocket connection active. Entering message receiving loop.")
             try:
-                while self._is_running and self._websocket:
+                async for message_raw in self._websocket:
+                    if not self._is_running:
+                        _LOGGER.info(f"[{self._hostname}] Stop requested during message processing in async for. Breaking from loop.")
+                        break  # Exit the async for loop
+
+                    # Message processing logic
                     try:
-                        message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=75.0) # Rely on ping_interval for keep-alive
                         status_time = time.time()
                         _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
                         decoded_message = self._decode_message(message_raw, status_time)
@@ -89,29 +93,32 @@ class ZeptrionAirWebsocketListener:
                                     ZEPTRION_AIR_WEBSOCKET_MESSAGE,
                                     decoded_message
                                 )
-                    except asyncio.TimeoutError:
-                        _LOGGER.warning(f"[{self._hostname}] Websocket recv timed out after 75s. This might indicate an issue despite keep-alive pings. Attempting to reconnect.")
-                        # No manual ping here, rely on websockets auto ping/pong.
-                        # Timeout here means something is wrong, so break to reconnect.
-                        await self._close_websocket() # Ensure cleanup before breaking
-                        break
-                    except websockets.exceptions.ConnectionClosed as e:
-                        _LOGGER.warning(f"[{self._hostname}] Websocket connection closed (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
-                        await self._close_websocket()
-                        break
-                    except Exception as e:
-                        _LOGGER.error(f"[{self._hostname}] Error during websocket message listening: {type(e).__name__} - {e}. Will attempt to reconnect.")
-                        await self._close_websocket()
-                        break
+                    except websockets.exceptions.ConnectionClosed as e: # This might still occur if the connection drops mid-iteration
+                        _LOGGER.warning(f"[{self._hostname}] Websocket connection closed during message processing (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
+                        await self._close_websocket() # Ensure cleanup
+                        break # Break from async for to outer while loop for reconnection
+                    except Exception as e: # Catch other unexpected errors during message processing
+                        _LOGGER.error(f"[{self._hostname}] Error during websocket message processing: {type(e).__name__} - {e}. Will attempt to reconnect.")
+                        await self._close_websocket() # Ensure cleanup
+                        break # Break from async for to outer while loop for reconnection
 
-                if not self._is_running:
-                    _LOGGER.info(f"[{self._hostname}] Listener stop requested while in message loop or after connection loss.")
+                # This block will be reached if the async for loop exits cleanly (e.g., server closes connection gracefully)
+                # or if a break statement inside the loop (due to error or stop request) is executed.
+                if self._is_running:
+                    _LOGGER.info(f"[{self._hostname}] Async for loop exited. Connection might have closed or stop was called. Will attempt to reconnect if still running.")
+                else:
+                    _LOGGER.info(f"[{self._hostname}] Async for loop exited due to stop request.")
+
+            except websockets.exceptions.ConnectionClosed as e:
+                # This handles cases where the connection is closed before or during the async for setup.
+                _LOGGER.warning(f"[{self._hostname}] Websocket connection closed outside message processing loop (code: {e.code}, reason: {e.reason}). Will attempt to reconnect.")
+                await self._close_websocket() # Ensure cleanup
             except Exception as e:
                 _LOGGER.error(f"[{self._hostname}] Unexpected error in message receiving logic wrapper: {type(e).__name__} - {e}")
-                await self._close_websocket()
+                await self._close_websocket() # Ensure cleanup
 
-            # If the inner loop broke (due to error or connection loss) and we are still running,
-            # the outer loop will call _connect_with_retry() again.
+            # If the async for loop broke (due to error or connection loss) or completed,
+            # and we are still running, the outer while loop will call _connect_with_retry() again.
             # No explicit sleep or backoff here, as _connect_with_retry handles it.
 
         _LOGGER.info(f"[{self._hostname}] Websocket listener has fully stopped.")
