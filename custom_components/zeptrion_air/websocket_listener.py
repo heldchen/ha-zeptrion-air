@@ -224,6 +224,20 @@ class ZeptrionAirWebsocketListener:
         self._task = None
         _LOGGER.info(f"[{self._hostname}] Websocket listener fully stopped and cleaned up.")
 
+    def is_alive(self) -> bool:
+        """Check if the websocket listener is active and healthy."""
+        if not self._is_running:
+            _LOGGER.debug(f"[{self._hostname}] is_alive: False (not supposed to be running).")
+            return False
+        if not self._task or self._task.done():
+            _LOGGER.debug(f"[{self._hostname}] is_alive: False (task is None or done).")
+            return False
+        if not self._websocket or not self._websocket.open:
+            _LOGGER.debug(f"[{self._hostname}] is_alive: False (websocket is None or not open).")
+            return False
+        _LOGGER.debug(f"[{self._hostname}] is_alive: True.")
+        return True
+
     async def _close_websocket(self):
         """Close websocket connection and cleanup."""
         _LOGGER.debug(f"[{self._hostname}] _close_websocket() called. Current state: _websocket is {'set' if self._websocket else 'None'}")
