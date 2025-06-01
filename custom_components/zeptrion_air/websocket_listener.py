@@ -32,7 +32,7 @@ class ZeptrionAirWebsocketListener:
                     _LOGGER.debug(f"[{self._hostname}] Closing pre-existing websocket connection before reconnecting.")
                     await self._close_websocket()
 
-                self._websocket = await websockets.connect(self._ws_url, ping_interval=25, ping_timeout=20)
+                self._websocket = await websockets.connect(self._ws_url, ping_interval=None, ping_timeout=20)
                 _LOGGER.info(f"[{self._hostname}] Successfully connected to websocket at {self._ws_url}")
                 return self._websocket # Return the active websocket connection
             except ConnectionRefusedError:
@@ -78,7 +78,7 @@ class ZeptrionAirWebsocketListener:
             try:
                 while self._is_running and self._websocket:
                     try:
-                        message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=60.0) # Rely on ping_interval for keep-alive
+                        message_raw = await asyncio.wait_for(self._websocket.recv(), timeout=75.0) # Rely on ping_interval for keep-alive
                         status_time = time.time()
                         _LOGGER.debug(f"[{self._hostname}] Raw WS message: {message_raw}")
                         decoded_message = self._decode_message(message_raw, status_time)
@@ -90,7 +90,7 @@ class ZeptrionAirWebsocketListener:
                                     decoded_message
                                 )
                     except asyncio.TimeoutError:
-                        _LOGGER.warning(f"[{self._hostname}] Websocket recv timed out after 60s. This might indicate an issue despite keep-alive pings. Attempting to reconnect.")
+                        _LOGGER.warning(f"[{self._hostname}] Websocket recv timed out after 75s. This might indicate an issue despite keep-alive pings. Attempting to reconnect.")
                         # No manual ping here, rely on websockets auto ping/pong.
                         # Timeout here means something is wrong, so break to reconnect.
                         await self._close_websocket() # Ensure cleanup before breaking
