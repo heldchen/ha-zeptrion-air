@@ -61,6 +61,7 @@ class ZeptrionAirApiClient:
 
     async def async_get_rssi(self) -> int | None:
         """Fetch and parse the RSSI value from the device."""
+        response_data = None # Initialize response_data
         try:
             response_data = await self._api_xml_wrapper(
                 method="get",
