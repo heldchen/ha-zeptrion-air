@@ -145,7 +145,6 @@ class ZeptrionAirBlind(ZeptrionAirEntity, CoverEntity):
         self.config_entry = entry
         self._channel_id = channel_id
         
-        self._attr_name = channel_name
         
         _LOGGER.debug("ZeptrionAirBlind cover entity initialized:")
         _LOGGER.debug("  Friendly name: '%s'", self._attr_name)

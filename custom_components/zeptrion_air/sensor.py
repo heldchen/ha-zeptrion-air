@@ -51,7 +51,7 @@ async def async_setup_entry(
         channel_api_icon_id: str = channel_info_dict.get("icon", "") # This is the icon ID like "1443_Auf_Ab"
 
         details_map: dict[str, dict[str, str]] = {
-            SENSOR_TYPE_NAME: {"name": "Name", "value": channel_api_name, "icon": "mdi:information-outline", "slug": "channel_name"},
+            SENSOR_TYPE_NAME: {"name": "Name", "value": channel_api_name, "icon": "mdi:information-outline", "slug": "name"},
             SENSOR_TYPE_GROUP: {"name": "Group", "value": channel_api_group, "icon": "mdi:folder-outline", "slug": "group"},
             SENSOR_TYPE_ICON_ID: {"name": "Icon ID", "value": channel_api_icon_id, "icon": "mdi:image-outline", "slug": "icon_id"},
         }
