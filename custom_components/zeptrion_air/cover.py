@@ -15,7 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import ZeptrionAirApiClient, ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError
+from .api import ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError
 from .const import (
     DOMAIN,
     SERVICE_BLIND_RECALL_S1,
@@ -26,32 +26,22 @@ from .const import (
     DEFAULT_STEP_DURATION_MS,
     ZEPTRION_AIR_WEBSOCKET_MESSAGE,
 )
+from .data import ZeptrionAirConfigEntry
+from .entity import ZeptrionAirEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ZeptrionAirConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Zeptrion Air cover entities from a config entry."""
-    platform_data: dict[str, Any] | None = hass.data[DOMAIN].get(entry.entry_id)
+    data = entry.runtime_data
 
-    if not platform_data:
-        _LOGGER.error("No platform_data found for entry ID %s", entry.entry_id)
-        return False
-
-    _LOGGER.debug("Received platform_data: %s", platform_data)
-
-    main_hub_device_info: dict[str, Any] = platform_data.get("hub_device_info", {})
-    identified_channels_list: list[dict[str, Any]] = platform_data.get("identified_channels", [])
-    hub_entry_title: str = platform_data.get("entry_title", "Zeptrion Air Hub") 
-    
-    hub_serial_for_blinds_maybe: str | None = platform_data.get("hub_serial")
-    if not hub_serial_for_blinds_maybe:
-        _LOGGER.error("Hub serial not found in platform_data.")
-        return False
-    hub_serial_for_blinds: str = hub_serial_for_blinds_maybe
+    main_hub_device_info = data.hub_device_info
+    identified_channels_list = data.identified_channels
+    hub_serial_for_blinds = data.hub_serial
 
     new_entities: list[ZeptrionAirBlind] = []
 
@@ -102,48 +92,60 @@ async def async_setup_entry(
 
             new_entities.append(
                 ZeptrionAirBlind(
-                    config_entry=entry, 
-                    device_info_for_blind_entity=blind_device_info,
+                    entry=entry,
                     channel_id=channel_id,
-                    hub_serial=hub_serial_for_blinds,
-                    entry_title=hub_entry_title,
-                    entity_base_slug=entity_base_slug
+                    channel_name=desired_name,
+                    model=blind_device_info["model"]
                 )
             )
     
     if new_entities:
-        for entity in new_entities:
-            _LOGGER.debug("Preparing to add cover entity: Name: %s, Unique ID: %s",
-                          entity.name, entity.unique_id)
         _LOGGER.info("Adding %s ZeptrionAirBlind cover entities.", len(new_entities))
         async_add_entities(new_entities)
+
+        platform = entity_platform.async_get_current_platform()
+        platform.async_register_entity_service(
+            SERVICE_BLIND_RECALL_S1,
+            {},
+            ZeptrionAirBlind.async_blind_recall_s1.__name__
+        )
+        platform.async_register_entity_service(
+            SERVICE_BLIND_RECALL_S2,
+            {},
+            ZeptrionAirBlind.async_blind_recall_s2.__name__
+        )
+        platform.async_register_entity_service(
+            SERVICE_BLIND_RECALL_S3,
+            {},
+            ZeptrionAirBlind.async_blind_recall_s3.__name__
+        )
+        platform.async_register_entity_service(
+            SERVICE_BLIND_RECALL_S4,
+            {},
+            ZeptrionAirBlind.async_blind_recall_s4.__name__
+        )
     else:
         _LOGGER.info("No Zeptrion Air cover entities to add.")
     
     return True
 
 
-class ZeptrionAirBlind(CoverEntity):
+class ZeptrionAirBlind(ZeptrionAirEntity, CoverEntity):
     """Representation of a Zeptrion Air Blind."""
 
     def __init__(
         self,
-        config_entry: ConfigEntry,
-        device_info_for_blind_entity: dict[str, Any], 
+        entry: ZeptrionAirConfigEntry,
         channel_id: int,
-        hub_serial: str, 
-        entry_title: str,
-        entity_base_slug: str,
+        channel_name: str,
+        model: str,
     ) -> None:
         """Initialize the Zeptrion Air blind."""
-        self.config_entry: ConfigEntry = config_entry 
-        self._channel_id: int = channel_id
+        super().__init__(entry.runtime_data.coordinator, channel_id)
+        self.config_entry = entry
+        self._channel_id = channel_id
         
-        self._attr_device_info: dict[str, Any] = device_info_for_blind_entity
-        
-        name_val = device_info_for_blind_entity.get("name")
-        self._attr_name: str = str(name_val) if name_val is not None else f"Channel {channel_id}"
-        self._attr_unique_id = f"zapp_{hub_serial}_ch{self._channel_id}"
+        self._attr_name = channel_name
         
         _LOGGER.debug("ZeptrionAirBlind cover entity initialized:")
         _LOGGER.debug("  Friendly name: '%s'", self._attr_name)
@@ -273,32 +275,6 @@ class ZeptrionAirBlind(CoverEntity):
                 ZEPTRION_AIR_WEBSOCKET_MESSAGE, self.async_handle_websocket_message
             )
         )
-                                            
-        platform: entity_platform.EntityPlatform | None = entity_platform.async_get_current_platform()
-
-        if platform:
-            platform.async_register_entity_service(
-                SERVICE_BLIND_RECALL_S1,
-                {},
-                self.async_blind_recall_s1.__name__
-            )
-            platform.async_register_entity_service(
-                SERVICE_BLIND_RECALL_S2,
-                {},
-                self.async_blind_recall_s2.__name__
-            )
-            platform.async_register_entity_service(
-                SERVICE_BLIND_RECALL_S3,
-                {},
-                self.async_blind_recall_s3.__name__
-            )
-            platform.async_register_entity_service(
-                SERVICE_BLIND_RECALL_S4,
-                {},
-                self.async_blind_recall_s4.__name__
-            )
-        else:
-            _LOGGER.warning("Entity platform not available for %s, services not registered.", self.entity_id)
 
     async def async_handle_websocket_message(self, event: Event) -> None:
         """Handle websocket messages for the blind."""

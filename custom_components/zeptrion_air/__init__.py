@@ -26,7 +26,7 @@ from .api import (
     ZeptrionAirApiClientCommunicationError,
 )
 from .coordinator import ZeptrionAirDataUpdateCoordinator
-from .data import ZeptrionAirData
+from .data import ZeptrionAirConfigEntry, ZeptrionAirData
 from .websocket_listener import ZeptrionAirWebsocketListener
 
 from .frontend import async_setup_frontend
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ZeptrionAirConfigEntry,
 ) -> bool:
     """Set up the Zeptrion Air Hub from a config entry."""
 
@@ -46,14 +46,8 @@ async def async_setup_entry(
     api_client: ZeptrionAirApiClient = ZeptrionAirApiClient(hostname=hostname, session=async_get_clientsession(hass))
 
     coordinator: ZeptrionAirDataUpdateCoordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
-    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
-    
-    entry.runtime_data = ZeptrionAirData(
-        client=api_client,
-        coordinator=coordinator,
-        integration=integration_obj
-    )
     coordinator.config_entry = entry
+    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
 
     try:
         # We need to perform an initial data fetch to get device_id for setup
@@ -137,58 +131,6 @@ async def async_setup_entry(
         config_entry_id=entry.entry_id,
         **hub_device_info 
     )
-
-    current_runtime_data = entry.runtime_data
-    if isinstance(current_runtime_data, ZeptrionAirData):
-        if entry.unique_id:
-            websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass, hub_unique_id=entry.unique_id)
-            await websocket_listener.start()
-            current_runtime_data.websocket_listener = websocket_listener
-        else:
-            LOGGER.error(f"[{hostname}] Cannot start WebSocket listener: entry.unique_id is not set. This is unexpected.")
-            # Optionally, set current_runtime_data.websocket_listener to None or handle error
-            current_runtime_data.websocket_listener = None # Ensure it's None if not started
-        if current_runtime_data.websocket_listener: # Only proceed if listener was successfully created and started
-            LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
-
-            # Define and schedule the watchdog
-            async def async_websocket_watchdog(now=None):
-                """Check the websocket listener and restart if necessary."""
-                # Ensure websocket_listener is not None before using it
-                if current_runtime_data.websocket_listener:
-                    LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
-                    if not current_runtime_data.websocket_listener.is_alive():
-                        LOGGER.warning(f"[{hostname}] Watchdog: WebSocket listener found inactive. Attempting restart.")
-                        try:
-                            await current_runtime_data.websocket_listener.start()
-                            LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
-                        except Exception as e:
-                            LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
-                    else:
-                        LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
-                else:
-                    LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is None, skipping check.")
-
-
-            # Schedule the watchdog to run every 5 minutes
-            cancel_watchdog_callback = async_track_time_interval(
-                hass,
-                async_websocket_watchdog,
-                timedelta(minutes=5)
-            )
-            current_runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
-            LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
-        else:
-            LOGGER.info(f"[{hostname}] WebSocket listener was not started (e.g. missing unique_id). Watchdog not scheduled.")
-
-    else:
-        # This block handles the case where current_runtime_data is not a ZeptrionAirData instance.
-        # It's less likely to have a 'websocket_listener' local variable here that needs stopping
-        # because the listener's lifecycle is tied to current_runtime_data being the correct type.
-        LOGGER.error(f"[{hostname}] Cannot start WebSocket listener or watchdog: runtime_data is not a ZeptrionAirData instance.")
-        # For now, we log the error and proceed without WS, as core functionality might still work.
-        # Consider returning False if WS is essential:
-        # return False
 
     identified_channels: list[dict[str, Any]] = []
     
@@ -280,16 +222,55 @@ async def async_setup_entry(
 
     LOGGER.info(f"Final identified usable channels for {hub_name}: {identified_channels}")
 
-    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
-    
-    platform_setup_data: dict[str, Any] = {
-        "hub_device_info": hub_device_info, 
-        "identified_channels": identified_channels, 
-        "entry_title": hub_name, 
-        "hub_serial": serial_number, 
-        "coordinator": coordinator
-    }
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = platform_setup_data
+    entry.runtime_data = ZeptrionAirData(
+        client=api_client,
+        coordinator=coordinator,
+        integration=integration_obj,
+        identified_channels=identified_channels,
+        hub_serial=serial_number,
+        hub_device_info=hub_device_info,
+    )
+
+    if entry.unique_id:
+        websocket_listener = ZeptrionAirWebsocketListener(hostname=hostname, hass_instance=hass, hub_unique_id=entry.unique_id)
+        await websocket_listener.start()
+        entry.runtime_data.websocket_listener = websocket_listener
+    else:
+        LOGGER.error(f"[{hostname}] Cannot start WebSocket listener: entry.unique_id is not set. This is unexpected.")
+        entry.runtime_data.websocket_listener = None # Ensure it's None if not started
+
+    if entry.runtime_data.websocket_listener: # Only proceed if listener was successfully created and started
+        LOGGER.info(f"[{hostname}] WebSocket listener started and attached to runtime_data.")
+
+        # Define and schedule the watchdog
+        async def async_websocket_watchdog(now=None):
+            """Check the websocket listener and restart if necessary."""
+            # Ensure websocket_listener is not None before using it
+            if entry.runtime_data.websocket_listener:
+                LOGGER.debug(f"[{hostname}] Watchdog: Checking WebSocket listener status.")
+                if not entry.runtime_data.websocket_listener.is_alive():
+                    LOGGER.warning(f"[{hostname}] Watchdog: WebSocket listener found inactive. Attempting restart.")
+                    try:
+                        await entry.runtime_data.websocket_listener.start()
+                        LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
+                    except Exception as e:
+                        LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
+                else:
+                    LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
+            else:
+                LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is None, skipping check.")
+
+
+        # Schedule the watchdog to run every 5 minutes
+        cancel_watchdog_callback = async_track_time_interval(
+            hass,
+            async_websocket_watchdog,
+            timedelta(minutes=5)
+        )
+        entry.runtime_data.websocket_watchdog_cancel_callback = cancel_watchdog_callback
+        LOGGER.info(f"[{hostname}] WebSocket listener watchdog scheduled every 5 minutes.")
+    else:
+        LOGGER.info(f"[{hostname}] WebSocket listener was not started (e.g. missing unique_id). Watchdog not scheduled.")
     
     # Set up frontend components
     
@@ -310,7 +291,7 @@ async def async_setup_entry(
 
 async def async_unload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ZeptrionAirConfigEntry,
 ) -> bool:
     """Handle removal of an entry."""
     # Stop the websocket listener if it exists
@@ -327,23 +308,12 @@ async def async_unload_entry(
             await entry.runtime_data.websocket_listener.stop()
             entry.runtime_data.websocket_listener = None
 
-    unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
-    if unload_ok:
-        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
-            hass.data[DOMAIN].pop(entry.entry_id)
-        # Ensure runtime_data is cleared, especially if it was ZeptrionAirData
-        if hasattr(entry, 'runtime_data') and entry.runtime_data is not None:
-            if isinstance(entry.runtime_data, ZeptrionAirData):
-                LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Clearing ZeptrionAirData from entry.runtime_data.")
-            else:
-                LOGGER.debug(f"[{entry.data.get(CONF_HOSTNAME, 'Unknown Host')}] Clearing non-ZeptrionAirData from entry.runtime_data.")
-            entry.runtime_data = None 
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
 
 
 async def async_reload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ZeptrionAirConfigEntry,
 ) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)
