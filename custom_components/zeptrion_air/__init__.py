@@ -249,8 +249,6 @@ async def async_setup_entry(
     await hass.config_entries.async_forward_entry_setups(entry, ZEPTRION_PLATFORMS)
     LOGGER.debug("Successfully forwarded entry setups for %s.", entry.entry_id)
     
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-    
     LOGGER.info("Zeptrion Air integration setup successfully completed for %s.", entry.title)
     return True
 
@@ -277,11 +275,4 @@ async def async_unload_entry(
     return await hass.config_entries.async_unload_platforms(entry, ZEPTRION_PLATFORMS)
 
 
-async def async_reload_entry(
-    hass: HomeAssistant,
-    entry: ZeptrionAirConfigEntry,
-) -> None:
-    """Reload config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
 

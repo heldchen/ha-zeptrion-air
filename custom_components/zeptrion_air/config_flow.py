@@ -174,7 +174,14 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     hostname=user_input[CONF_HOSTNAME],
                     session=async_create_clientsession(self.hass),
                 )
-                await api.async_get_device_identification()
+                device_info = await api.async_get_device_identification()
+
+                zrap_id_data = device_info.get('id', {})
+                serial_number = zrap_id_data.get('sn')
+
+                if not serial_number or serial_number != entry.unique_id:
+                    LOGGER.error("Reconfiguration failed: Host serial number mismatch or not found.")
+                    return self.async_abort(reason="unique_id_mismatch")
 
                 return self.async_update_reload_and_abort(
                     entry,
