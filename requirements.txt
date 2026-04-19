@@ -1,6 +1,5 @@
 aiohttp
-async_timeout
-homeassistant>=2025.5.0
+homeassistant>=2026.4.0
 http
 lovelace
 voluptuous

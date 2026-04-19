@@ -14,7 +14,6 @@ from typing import Any, ParamSpec, TypeVar
 
 import aiohttp
 from aiohttp import ClientResponseError
-import async_timeout
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,7 +173,7 @@ class ZeptrionAirApiClient:
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Actual JSON request logic."""
-        async with async_timeout.timeout(self._request_timeout):
+        async with asyncio.timeout(self._request_timeout):
             response = await self._session.request(
                 method=method,
                 url=f"{self._baseurl}{path}",
@@ -224,7 +223,7 @@ class ZeptrionAirApiClient:
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Actual XML request logic."""
-        async with async_timeout.timeout(self._request_timeout):
+        async with asyncio.timeout(self._request_timeout):
             response = await self._session.request(
                 method=method,
                 url=f"{self._baseurl}{path}",
@@ -286,7 +285,7 @@ class ZeptrionAirApiClient:
         """Actual POST URL-encoded request logic."""
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         encoded_data = urlencode(form_data)
-        async with async_timeout.timeout(self._request_timeout):
+        async with asyncio.timeout(self._request_timeout):
             response = await self._session.request(
                 method="post",
                 url=f"{self._baseurl}{path}",
