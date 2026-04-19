@@ -241,7 +241,10 @@ class ZeptrionAirBlind(ZeptrionAirEntity, CoverEntity):
         _LOGGER.debug("Tilting open blind %s (Channel %s)", self._attr_name, self._channel_id)
         self._commanded_action = "tilt_opening"
         try:
-            step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            step_duration_ms = self.config_entry.options.get(
+                CONF_STEP_DURATION_MS,
+                self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            )
             await self.config_entry.runtime_data.client.async_channel_move_open(self._channel_id, time_ms=step_duration_ms)
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             _LOGGER.error("API error while tilting open blind %s (Channel %s): %s", self._attr_name, self._channel_id, e)
@@ -255,7 +258,10 @@ class ZeptrionAirBlind(ZeptrionAirEntity, CoverEntity):
         _LOGGER.debug("Tilting close blind %s (Channel %s)", self._attr_name, self._channel_id)
         self._commanded_action = "tilt_closing"
         try:
-            step_duration_ms = self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            step_duration_ms = self.config_entry.options.get(
+                CONF_STEP_DURATION_MS,
+                self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
+            )
             await self.config_entry.runtime_data.client.async_channel_move_close(self._channel_id, time_ms=step_duration_ms)
         except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
             self._commanded_action = None

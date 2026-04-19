@@ -45,49 +45,15 @@ async def async_setup_entry(
     hostname: str = entry.data[CONF_HOSTNAME] 
     api_client: ZeptrionAirApiClient = ZeptrionAirApiClient(hostname=hostname, session=async_get_clientsession(hass))
 
-    coordinator: ZeptrionAirDataUpdateCoordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
+    coordinator = ZeptrionAirDataUpdateCoordinator(hass=hass, client=api_client)
     coordinator.config_entry = entry
-    integration_obj: Integration = async_get_loaded_integration(hass, entry.domain)
+    integration_obj = async_get_loaded_integration(hass, entry.domain)
 
-    try:
-        # We need to perform an initial data fetch to get device_id for setup
-        # This is a one-time fetch; subsequent updates are handled by the coordinator's schedule
-        device_data_api = await api_client.async_get_device_identification() # Use api_client directly for initial fetch
+    # Use coordinator to fetch first data
+    await coordinator.async_config_entry_first_refresh()
 
-        if not device_data_api:
-            LOGGER.error(f"Failed to fetch initial device identification data for {hostname} using api_client.")
-            entry.runtime_data = None
-            return False
-
-        # Fetch initial RSSI - supplemental, non-critical for setup to proceed
-        rssi_value = None
-        try:
-            rssi_value = await api_client.async_get_rssi()
-            LOGGER.debug(f"Successfully fetched initial RSSI for {hostname}: {rssi_value}")
-        except ZeptrionAirApiClientCommunicationError as e:
-            LOGGER.warning(f"Initial RSSI fetch failed (communication error) for {hostname}: {e}. Will rely on coordinator updates.")
-        except ZeptrionAirApiClientError as e:
-            LOGGER.warning(f"Initial RSSI fetch failed (API error) for {hostname}: {e}. Will rely on coordinator updates.")
-        except Exception as e:
-            LOGGER.error(f"Unexpected error during initial RSSI fetch for {hostname}: {e}. Will rely on coordinator updates.")
-        device_data_api['rssi_dbm'] = rssi_value
-        
-        # Store the initially fetched data (now including RSSI) in the coordinator
-        if coordinator.data is None:
-            coordinator.data = device_data_api.copy()
-
-        # Fetch channel descriptions directly, this is a one-off setup task
-        channel_des_data: dict[str, Any] = await api_client.async_get_channel_descriptions()
-        LOGGER.debug(f"Full /zrap/chdes response for {hostname}: {channel_des_data}")
-
-    except (ZeptrionAirApiClientCommunicationError, ZeptrionAirApiClientError) as e:
-        LOGGER.error(f"Failed to communicate with Zeptrion Air device {hostname} during setup: {e}")
-        entry.runtime_data = None
-        return False
-    except Exception as e:
-        LOGGER.error(f"Unexpected error setting up Zeptrion Air device {hostname}: {e}")
-        entry.runtime_data = None
-        return False
+    device_data_api = coordinator.data
+    channel_des_data = await api_client.async_get_channel_descriptions()
 
     zrap_id_data: dict[str, Any] = device_data_api.get('id', {})
     if not zrap_id_data:

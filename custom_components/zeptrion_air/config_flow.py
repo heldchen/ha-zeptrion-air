@@ -7,7 +7,7 @@ import zeroconf
 
 import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME 
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_IP_ADDRESS, CONF_HOSTNAME
 from homeassistant.core import callback 
 from homeassistant.components import onboarding 
 from homeassistant.helpers import selector 
@@ -161,6 +161,39 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return await self.async_step_confirm()
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        """Handle reconfiguration."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            try:
+                api: ZeptrionAirApiClient = ZeptrionAirApiClient(
+                    hostname=user_input[CONF_HOSTNAME],
+                    session=async_create_clientsession(self.hass),
+                )
+                await api.async_get_device_identification()
+
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data={**entry.data, **user_input},
+                )
+            except ZeptrionAirApiClientCommunicationError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(CONF_HOSTNAME, default=entry.data.get(CONF_HOSTNAME)): str,
+            }),
+            errors=errors,
+        )
+
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> data_entry_flow.FlowResult: 
@@ -229,41 +262,29 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-# Options Flow Handler
-class ZeptrionAirOptionsFlowHandler(config_entries.OptionsFlow):
+class ZeptrionAirOptionsFlowHandler(config_entries.OptionsFlowWithReload):
     """Handle Zeptrion Air options."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry: config_entries.ConfigEntry = config_entry
-        self.options: dict[str, Any] = dict(config_entry.options)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> data_entry_flow.FlowResult: 
         """Manage the options."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
-            self.options.update(user_input)
-            return self.async_create_entry(title="", data=self.options)
+            return self.async_create_entry(title="", data=user_input)
 
-        current_duration: int = self.config_entry.options.get(
+        current_duration = self.config_entry.options.get(
             CONF_STEP_DURATION_MS,
             self.config_entry.data.get(CONF_STEP_DURATION_MS, DEFAULT_STEP_DURATION_MS)
         )
 
-        options_schema: vol.Schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_STEP_DURATION_MS,
-                    default=current_duration,
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_STEP_DURATION_MS, max=MAX_STEP_DURATION_MS)),
-            }
-        )
-
         return self.async_show_form(
             step_id="init",
-            data_schema=options_schema,
-            errors=errors,
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_STEP_DURATION_MS,
+                        default=current_duration,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_STEP_DURATION_MS, max=MAX_STEP_DURATION_MS)),
+                }
+            )
         )

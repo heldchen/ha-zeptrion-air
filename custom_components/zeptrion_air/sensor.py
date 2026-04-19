@@ -123,7 +123,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT # Added import
+from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, EntityCategory
 
 class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     """Representation of a Zeptrion Air RSSI Sensor for the Hub."""
@@ -132,6 +132,7 @@ class ZeptrionAirRssiSensor(ZeptrionAirEntity, SensorEntity):
     _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,

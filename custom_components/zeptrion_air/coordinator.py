@@ -42,9 +42,6 @@ class ZeptrionAirDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library, including device identification and RSSI."""
-        if self.config_entry.runtime_data is None:
-            LOGGER.error("Coordinator: Cannot update data, runtime_data is not available. Integration might not have been set up correctly or has been unloaded.")
-            raise UpdateFailed("runtime_data not available")
         if self.client is None:
             LOGGER.error("Coordinator: Cannot update data, API client is not available. Integration might not have been set up correctly.")
             raise UpdateFailed("API client not available")
