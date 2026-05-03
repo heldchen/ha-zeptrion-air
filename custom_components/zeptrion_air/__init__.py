@@ -7,23 +7,18 @@ https://github.com/alternize/ha-zeptrion-air-integration
 
 from __future__ import annotations
 
-import logging
-import re 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.loader import async_get_loaded_integration, Integration
+from homeassistant.loader import async_get_loaded_integration
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.event import async_track_time_interval
 from datetime import timedelta
 
 from .api import (
     ZeptrionAirApiClient,
-    ZeptrionAirApiClientError,
-    ZeptrionAirApiClientCommunicationError,
 )
 from .coordinator import ZeptrionAirDataUpdateCoordinator
 from .data import ZeptrionAirConfigEntry, ZeptrionAirData
@@ -32,9 +27,6 @@ from .websocket_listener import ZeptrionAirWebsocketListener
 from .frontend import async_setup_frontend
 
 from .const import DOMAIN, LOGGER, CONF_HOSTNAME, PLATFORMS as ZEPTRION_PLATFORMS
-
-if TYPE_CHECKING:
-    pass
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -53,6 +45,8 @@ async def async_setup_entry(
     await coordinator.async_config_entry_first_refresh()
 
     device_data_api = coordinator.data
+    if not isinstance(device_data_api, dict):
+        raise ConfigEntryNotReady(f"Coordinator returned invalid initial data for {hostname}")
     channel_des_data = await api_client.async_get_channel_descriptions()
 
     zrap_id_data: dict[str, Any] = device_data_api.get('id', {})
@@ -219,8 +213,8 @@ async def async_setup_entry(
                     try:
                         await entry.runtime_data.websocket_listener.start()
                         LOGGER.info(f"[{hostname}] Watchdog: WebSocket listener restarted successfully.")
-                    except Exception as e:
-                        LOGGER.error(f"[{hostname}] Watchdog: Error restarting WebSocket listener: {e}")
+                    except RuntimeError as err:
+                        LOGGER.error(f"[{hostname}] Watchdog: Runtime error restarting WebSocket listener: {err}")
                 else:
                     LOGGER.debug(f"[{hostname}] Watchdog: WebSocket listener is alive.")
             else:

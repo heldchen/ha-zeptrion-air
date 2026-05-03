@@ -7,10 +7,7 @@ import zeroconf
 
 import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_IP_ADDRESS, CONF_HOSTNAME
 from homeassistant.core import callback 
-from homeassistant.components import onboarding 
-from homeassistant.helpers import selector 
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import (
@@ -36,7 +33,6 @@ class ZeptrionAirConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Zeptrion Air."""
 
     VERSION: int = 1
-    CONNECTION_CLASS: str = config_entries.CONN_CLASS_LOCAL_POLL 
 
     @staticmethod
     @callback
