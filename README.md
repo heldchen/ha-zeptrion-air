@@ -1,5 +1,7 @@
 # Home Assistant Zeptrion Air Integration
 
+> **This repository is archived and no longer maintained.** It continues as [polar-gith/ha-zeptrion-air-integration](https://github.com/polar-gith/ha-zeptrion-air-integration) (in HACS: *Zeptrion Air*). Same domain `zeptrion_air`: remove this repository in HACS, install the new one and restart Home Assistant; devices, entities and their IDs, automations and the step duration are kept.
+
 ## Description
 
 This is a custom integration for Home Assistant that allows you to control [Zeptrion Air](https://www.feller.ch/de/Produkte/Gebaeudeautomation/Zeptrion-Systeme/Zeptrion-Air) devices locally over your WLAN. Zeptrion Air hubs connect to your network and expose a REST API for controlling attached lights, blinds, and other devices. This integration aims to bring these devices into Home Assistant for automation and UI control.
@@ -30,7 +32,7 @@ This is a custom integration for Home Assistant that allows you to control [Zept
 
 ## Installation
 
-[Add repository to HACS](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=ha-zeptrion-air-integration&owner=alternize)
+This repository is archived. Install the maintained successor instead: [Add polar-gith/ha-zeptrion-air-integration to HACS](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=ha-zeptrion-air-integration&owner=polar-gith) (in the HACS default store as *Zeptrion Air*).
 
 ## Technical Details: API Usage
 

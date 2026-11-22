@@ -1,16 +1,22 @@
 {
-  "config":{
-     "step":{
-        "confirm":{
-           "description":"Do you want to add {hostname} (`{ip}`) to Home Assistant?"
-        }
-     },
-     "error":{
-        "cannot_connect":"[%key:common::config_flow::error::cannot_connect%]"
-     },
-     "abort":{
-        "already_configured":"[%key:common::config_flow::abort::already_configured_device%]",
-        "cannot_connect":"[%key:common::config_flow::error::cannot_connect%]"
-     }
+  "config": {
+    "step": {
+      "confirm": {
+        "description": "Do you want to add {hostname} (`{ip}`) to Home Assistant?"
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    }
+  },
+  "issues": {
+    "moved_to_polar_gith": {
+      "title": "Zeptrion Air: this integration is no longer maintained",
+      "description": "heldchen/ha-zeptrion-air is archived. It continues as polar-gith/ha-zeptrion-air-integration (same domain zeptrion_air): in HACS remove this repository, install Zeptrion Air from polar-gith and restart Home Assistant. Your devices, entities and their IDs, automations and the step duration are kept."
+    }
   }
 }
