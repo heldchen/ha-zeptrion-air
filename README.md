@@ -32,7 +32,7 @@ This is a custom integration for Home Assistant that allows you to control [Zept
 
 ## Installation
 
-[Add repository to HACS](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=ha-zeptrion-air-integration&owner=alternize)
+This repository is archived. Install the maintained successor instead: [Add polar-gith/ha-zeptrion-air-integration to HACS](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=ha-zeptrion-air-integration&owner=polar-gith) (in the HACS default store as *Zeptrion Air*).
 
 ## Technical Details: API Usage
 
