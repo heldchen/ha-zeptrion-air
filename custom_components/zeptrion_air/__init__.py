@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_loaded_integration, Integration
 from homeassistant.helpers import device_registry
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from datetime import timedelta
 
@@ -41,6 +42,17 @@ async def async_setup_entry(
     entry: ConfigEntry,
 ) -> bool:
     """Set up the Zeptrion Air Hub from a config entry."""
+    # This repository is archived: point users to the maintained integration.
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        "moved_to_polar_gith",
+        is_fixable=False,
+        is_persistent=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="moved_to_polar_gith",
+        learn_more_url="https://github.com/polar-gith/ha-zeptrion-air-integration#installation",
+    )
 
     hostname: str = entry.data[CONF_HOSTNAME] 
     api_client: ZeptrionAirApiClient = ZeptrionAirApiClient(hostname=hostname, session=async_get_clientsession(hass))
